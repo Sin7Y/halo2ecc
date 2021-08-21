@@ -1,0 +1,23 @@
+[package]
+name = "halo2wheels"
+version = "0.0.1"
+authors = [
+    "Xin Gao",
+]
+edition = "2018"
+description = """
+Wheels circuts for halo2
+"""
+license-file = "LICENSE-BOSL"
+repository = "https://github.com/zcash/halo2"
+documentation = "https://docs.rs/halo2"
+readme = "README.md"
+
+# We are not publishing this yet.
+publish = false
+
+[dependencies]
+halo2 = { path = "halo2"}
+
+[lib]
+path = "src/lib.rs"
