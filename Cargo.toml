@@ -18,6 +18,7 @@ publish = false
 
 [dependencies]
 halo2 = { path = "halo2"}
+num-bigint = "0.4"
 
 [lib]
 path = "src/lib.rs"

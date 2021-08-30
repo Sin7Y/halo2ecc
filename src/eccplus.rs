@@ -91,24 +91,8 @@ impl Config {
             let y_r = meta.query_advice(self.y_qr, Rotation::next());
             let lambda = meta.query_advice(self.lambda, Rotation::cur());
 
-            // α = inv0(x_q - x_p)
-            let alpha = meta.query_advice(self.alpha, Rotation::cur());
-            // β = inv0(x_p)
-            let beta = meta.query_advice(self.beta, Rotation::cur());
-            // γ = inv0(x_q)
-            let gamma = meta.query_advice(self.gamma, Rotation::cur());
-            // δ = inv0(y_p + y_q) if x_q = x_p, 0 otherwise
-            let delta = meta.query_advice(self.delta, Rotation::cur());
 
-            // Useful composite expressions
-            // α ⋅(x_q - x_p)
-            let if_alpha = (x_q.clone() - x_p.clone()) * alpha;
-            // β ⋅ x_p
-            let if_beta = x_p.clone() * beta;
-            // γ ⋅ x_q
-            let if_gamma = x_q.clone() * gamma;
-            // δ ⋅(y_p + y_q)
-            let if_delta = (y_q.clone() + y_p.clone()) * delta;
+            let if_none = (x_p + y_p) * delta;
 
             // Useful constants
             let one = Expression::Constant(pallas::Base::one());
