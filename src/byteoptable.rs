@@ -72,7 +72,7 @@ impl<F: FieldExt> ByteOpChip<F> {
         cs.lookup(|meta| {
           let l_cur = meta.query_advice(l_col, Rotation::cur());
           let r_cur = meta.query_advice(r_col, Rotation::cur());
-          vec![(l_cur * r_cur, tbl_col)]
+          vec![(l_cur * (F::from(16)) + r_cur, tbl_col)]
         });
 
         ByteOpChipConfig {
@@ -98,7 +98,7 @@ impl<F: FieldExt> ByteOpChip<F> {
                             || "table_idx",
                             self.config.tbl_col,
                             l * (1<< BYTE_BITS) + r,
-                            || Ok(F::from(1))
+                            || Ok(F::from_u64((l as u64) * (r as u64)))
                         )?;
                     }
                 }
@@ -117,10 +117,12 @@ impl<F: FieldExt> ByteOpChip<F> {
         b: Option<F>,
         c: Option<F>,
     ) -> Result<(), Error> {
+        let va = a.unwrap();
+        let vb = b.unwrap();
         layouter.assign_region(
             || "private and public inputs",
             |mut region| {
-                let row_offset = 0;
+                let row_offset = 65;
                 //self.config.s_pub.enable(&mut region, row_offset)?;
                 region.assign_advice(
                     || "private input `a`",
@@ -189,27 +191,31 @@ fn circuit() {
     // The actual number of rows in the constraint system is `2^k` where `N_ROWS_USED <= 2^k`.
     let k = (N_ROWS_USED as f32).log2().ceil() as u32;
     println!("k is {}", k);
+
     let mut pub_inputs = vec![Fp::zero()];
     pub_inputs[PUB_INPUT_ROW] = Fp::from(PUB_INPUT);
 
     // Assert that the lookup passes because `xor(2, 1) == PUB_INPUT`.
     let circuit = ByteOpCircuit {
-        a: Some(Fp::from(2)),
-        b: Some(Fp::from(1)),
+        a: Some(Fp::from(0x4)),
+        b: Some(Fp::from(0x1)),
         c: Some(Fp::from(PUB_INPUT)),
     };
     let prover = MockProver::run(10, &circuit, vec![]).unwrap();
-    assert!(prover.verify().is_ok());
+    let presult = prover.verify();
+    println!("Error {:?}", presult);
+
+    assert!(presult.is_ok());
 
     // Assert that the public input gate is unsatisfied when `c != PUB_INPUT` (but when the lookup
     // passes).
+    /*
     let bad_circuit = ByteOpCircuit {
         a: Some(Fp::from(2)),
-        b: Some(Fp::from(0)),
+        b: Some(Fp::from(3)),
         c: Some(Fp::from(2)),
     };
     let prover = MockProver::run(k, &bad_circuit, vec![pub_inputs.clone()]).unwrap();
-    /*
     match prover.verify() {
         Err(errors) => {
             assert_eq!(errors.len(), 1, "expected one verification error, found: {:?}", errors);
