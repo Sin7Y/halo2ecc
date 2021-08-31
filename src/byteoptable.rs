@@ -43,7 +43,10 @@ struct ByteOpChip<F: FieldExt> {
 struct ByteOpChipConfig {
     l_col: Column<Advice>,
     r_col: Column<Advice>,
-    tbl_col: TableColumn,
+    o_col: Column<Advice>,
+    tbl_o: TableColumn,
+    tbl_l: TableColumn,
+    tbl_r: TableColumn,
 }
 
 impl<F:FieldExt> Chip<F> for ByteOpChip<F> {
@@ -67,18 +70,25 @@ impl<F: FieldExt> ByteOpChip<F> {
     fn configure(cs: &mut ConstraintSystem<F>, tbl_col:TableColumn) -> ByteOpChipConfig {
         let l_col = cs.advice_column();
         let r_col = cs.advice_column();
-
+        let o_col = cs.advice_column();
+        let tbl_l = cs.lookup_table_column();
+        let tbl_r = cs.lookup_table_column();
+        let tbl_o = cs.lookup_table_column();
 
         cs.lookup(|meta| {
           let l_cur = meta.query_advice(l_col, Rotation::cur());
           let r_cur = meta.query_advice(r_col, Rotation::cur());
-          vec![(l_cur * (F::from(16)) + r_cur, tbl_col)]
+          let o_cur = meta.query_advice(o_col, Rotation::cur());
+          vec![(l_cur, tbl_l), (r_cur, tbl_r), (o_cur, tbl_o)]
         });
 
         ByteOpChipConfig {
             l_col,
             r_col,
-            tbl_col,
+            o_col,
+            tbl_l,
+            tbl_r,
+            tbl_o,
         }
     }
 
@@ -96,9 +106,21 @@ impl<F: FieldExt> ByteOpChip<F> {
                         println!("value: {:?}", F::from_u64((l * (1 << BYTE_BITS) +  r) as u64));
                         table.assign_cell(
                             || "table_idx",
-                            self.config.tbl_col,
+                            self.config.tbl_o,
                             l * (1<< BYTE_BITS) + r,
                             || Ok(F::from_u64((l as u64) * (r as u64)))
+                        )?;
+                        table.assign_cell(
+                            || "table_idx",
+                            self.config.tbl_l,
+                            l * (1<< BYTE_BITS) + r,
+                            || Ok(F::from_u64((l as u64)))
+                        )?;
+                        table.assign_cell(
+                            || "table_idx",
+                            self.config.tbl_r,
+                            l * (1<< BYTE_BITS) + r,
+                            || Ok(F::from_u64(r as u64))
                         )?;
                     }
                 }
@@ -122,7 +144,7 @@ impl<F: FieldExt> ByteOpChip<F> {
         layouter.assign_region(
             || "private and public inputs",
             |mut region| {
-                let row_offset = 65;
+                let row_offset = 0;
                 //self.config.s_pub.enable(&mut region, row_offset)?;
                 region.assign_advice(
                     || "private input `a`",
@@ -135,6 +157,12 @@ impl<F: FieldExt> ByteOpChip<F> {
                     self.config.r_col,
                     row_offset,
                     || b.ok_or(Error::SynthesisError),
+                )?;
+                region.assign_advice(
+                    || "private input `b`",
+                    self.config.o_col,
+                    row_offset,
+                    || c.ok_or(Error::SynthesisError),
                 )?;
                 Ok(())
             },
@@ -197,9 +225,9 @@ fn circuit() {
 
     // Assert that the lookup passes because `xor(2, 1) == PUB_INPUT`.
     let circuit = ByteOpCircuit {
-        a: Some(Fp::from(0x4)),
-        b: Some(Fp::from(0x1)),
-        c: Some(Fp::from(PUB_INPUT)),
+        a: Some(Fp::from(0x2)),
+        b: Some(Fp::from(0x2)),
+        c: Some(Fp::from(0x4)),
     };
     let prover = MockProver::run(10, &circuit, vec![]).unwrap();
     let presult = prover.verify();
