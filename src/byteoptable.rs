@@ -11,32 +11,40 @@ use halo2::arithmetic::FieldExt;
 use num_bigint::BigUint;
 use std::marker::PhantomData;
 
-
-struct FpRepr {
-  values: Vec<u8>
+trait ByteOp {
+    fn bop(op1: BigUint, op2: BigUint) -> BigUint;
 }
 
-impl FpRepr {
-  fn proj(&self, i:usize) -> u8 {
-    if(i >= self.values.len()) {
-      return 0;
-    } else {
-      return self.values[i];
+struct FpRepr<B: ByteOp> {
+    values: Vec<u8>,
+    _marker: PhantomData<B>,
+}
+
+impl<B: ByteOp> FpRepr<B> {
+    fn proj(&self, i:usize) -> u8 {
+        if(i >= self.values.len()) {
+            return 0;
+        } else {
+            return self.values[i];
+        }
     }
-  }
+    fn repr (&self) -> BigUint {
+        BigUint::from_bytes_le(&self.values)
+    }
+    fn get_op_entry (seg_x:FpRepr<B>, seg_y:FpRepr<B>, basis: u32) -> FpRepr<B> {
+        FpRepr {
+            values: (B::bop (seg_x.repr(), seg_y.repr()) << basis).to_bytes_le(),
+            _marker: PhantomData,
+        }
+    }
 }
-
-
-fn get_mult_entry (seg_x:BigUint, seg_y:BigUint, basis: u32) -> FpRepr {
-  FpRepr {values: ((seg_x * seg_y) << basis).to_bytes_le()}
-}
-
 
 const BYTE_BITS: usize = 4;
 
-struct ByteOpChip<F: FieldExt> {
+struct ByteOpChip<F: FieldExt, B:ByteOp> {
     config: ByteOpChipConfig,
-    _marker: PhantomData<F>,
+    _markerF: PhantomData<F>,
+    _markerB: PhantomData<B>,
 }
 
 #[derive(Clone, Debug)]
@@ -49,7 +57,7 @@ struct ByteOpChipConfig {
     tbl_r: TableColumn,
 }
 
-impl<F:FieldExt> Chip<F> for ByteOpChip<F> {
+impl<F:FieldExt, B:ByteOp> Chip<F> for ByteOpChip<F, B> {
     type Config = ByteOpChipConfig;
     type Loaded = ();
 
@@ -62,9 +70,9 @@ impl<F:FieldExt> Chip<F> for ByteOpChip<F> {
     }
 }
 
-impl<F: FieldExt> ByteOpChip<F> {
+impl<F: FieldExt, B:ByteOp> ByteOpChip<F, B> {
     fn new(config: ByteOpChipConfig) -> Self {
-        ByteOpChip { config, _marker: PhantomData }
+        ByteOpChip { config, _markerF: PhantomData, _markerB: PhantomData }
     }
 
     fn configure(cs: &mut ConstraintSystem<F>, tbl_col:TableColumn) -> ByteOpChipConfig {
@@ -114,7 +122,7 @@ impl<F: FieldExt> ByteOpChip<F> {
                             || "table_idx",
                             self.config.tbl_l,
                             l * (1<< BYTE_BITS) + r,
-                            || Ok(F::from_u64((l as u64)))
+                            || Ok(F::from_u64(l as u64))
                         )?;
                         table.assign_cell(
                             || "table_idx",
@@ -180,6 +188,16 @@ struct ByteOpCircuit {
     c: Option<Fp>,
 }
 
+struct PlusOp {
+    m: PhantomData<()>
+}
+
+impl ByteOp for PlusOp {
+    fn bop (x:BigUint, y:BigUint) -> BigUint {
+        x + y
+    }
+}
+
 impl Circuit<Fp> for ByteOpCircuit {
     type Config = ByteOpChipConfig;
     type FloorPlanner = SimpleFloorPlanner;
@@ -190,12 +208,12 @@ impl Circuit<Fp> for ByteOpCircuit {
 
     fn configure(cs: &mut ConstraintSystem<Fp>) -> Self::Config {
         let tbl_col = cs.lookup_table_column();
-        ByteOpChip::configure(cs, tbl_col)
+        ByteOpChip::<Fp, PlusOp>::configure(cs, tbl_col)
     }
 
     fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<Fp>) -> Result<(), Error> {
         println!("Start synthesize ...");
-        let op_chip = ByteOpChip::new(config);
+        let op_chip = ByteOpChip::<Fp, PlusOp>::new(config);
         println!("CreateOpChip ... Done");
         op_chip.alloc_table(&mut layouter)?;
         println!("AllocTable ... Done");
