@@ -31,15 +31,15 @@ impl<B: ByteOp> FpRepr<B> {
     fn repr (&self) -> BigUint {
         BigUint::from_bytes_le(&self.values)
     }
-    fn get_op_entry (seg_x:FpRepr<B>, seg_y:FpRepr<B>, basis: u32) -> FpRepr<B> {
+    fn get_op_entry (seg_x:BigUint, seg_y:BigUint, basis: u32) -> FpRepr<B> {
         FpRepr {
-            values: (B::bop (seg_x.repr(), seg_y.repr()) << basis).to_bytes_le(),
+            values: (B::bop (seg_x, seg_y) << basis).to_bytes_le(),
             _marker: PhantomData,
         }
     }
 }
 
-const BYTE_BITS: usize = 4;
+const BYTE_BITS: usize = 8;
 
 struct ByteOpChip<F: FieldExt, B:ByteOp> {
     config: ByteOpChipConfig,
@@ -100,23 +100,24 @@ impl<F: FieldExt, B:ByteOp> ByteOpChip<F, B> {
         }
     }
 
-    // Allocates all legal input-output tuples for the BYTE function in the first
-    // `2^BYTE_BITS * 2^BYTE_BITS = 16` rows of the constraint system.
-    fn alloc_table(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+    // `2^BYTE_BITS * 2^BYTE_BITS = 2^16` rows of the constraint system.
+    fn alloc_table(&self, layouter: &mut impl Layouter<F>, basis:u32, idx:usize) -> Result<(), Error> {
         layouter.assign_table(
             || "u16-op-table",
             |mut table| {
                 let mut row_offset = 0;
                 for l in 0..1 << BYTE_BITS {
-                    println!("l: {}", l);
                     for r in 0..1 << BYTE_BITS {
+                        let repr = FpRepr::<B>::get_op_entry(BigUint::from(l),
+                                BigUint::from(r),
+                                basis);
+                        println!("l: {}, r: {} v:{:?}", l, r, repr.proj(idx));
                         println!("value: {}", l * (1<<BYTE_BITS) + r);
-                        println!("value: {:?}", F::from_u64((l * (1 << BYTE_BITS) +  r) as u64));
                         table.assign_cell(
                             || "table_idx",
                             self.config.tbl_o,
                             l * (1<< BYTE_BITS) + r,
-                            || Ok(F::from_u64((l as u64) * (r as u64)))
+                            || Ok(F::from_u64(repr.proj(idx).into()))
                         )?;
                         table.assign_cell(
                             || "table_idx",
@@ -215,7 +216,7 @@ impl Circuit<Fp> for ByteOpCircuit {
         println!("Start synthesize ...");
         let op_chip = ByteOpChip::<Fp, PlusOp>::new(config);
         println!("CreateOpChip ... Done");
-        op_chip.alloc_table(&mut layouter)?;
+        op_chip.alloc_table(&mut layouter, 0, 0)?;
         println!("AllocTable ... Done");
         op_chip.alloc_private_and_public_inputs(&mut layouter, self.a, self.b, self.c)?;
         println!("AllocPrivate ... Done");
@@ -241,13 +242,12 @@ fn circuit() {
     let mut pub_inputs = vec![Fp::zero()];
     pub_inputs[PUB_INPUT_ROW] = Fp::from(PUB_INPUT);
 
-    // Assert that the lookup passes because `xor(2, 1) == PUB_INPUT`.
     let circuit = ByteOpCircuit {
-        a: Some(Fp::from(0x2)),
-        b: Some(Fp::from(0x2)),
-        c: Some(Fp::from(0x4)),
+        a: Some(Fp::from(255)),
+        b: Some(Fp::from(255)),
+        c: Some(Fp::from(254)),
     };
-    let prover = MockProver::run(10, &circuit, vec![]).unwrap();
+    let prover = MockProver::run(17, &circuit, vec![]).unwrap();
     let presult = prover.verify();
     println!("Error {:?}", presult);
 
