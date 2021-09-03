@@ -32,7 +32,7 @@ impl<F: FieldExt> ModuloConfig<F> {
     fn configure(
         meta: &mut ConstraintSystem<F>,
     ) -> <Self as Chip<F>>::Config {
-        let advice = 
+        let advice =
         FieldConfig {
             advice,
             instance,
