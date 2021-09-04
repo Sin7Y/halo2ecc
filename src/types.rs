@@ -20,6 +20,6 @@ pub struct FieldNumAdvice<F: FieldExt> {
 
 #[derive(Clone)]
 pub struct Number<F: FieldExt> {
-    cell: Cell,
-    value: Option<F>,
+    pub cell: Cell,
+    pub value: Option<F>,
 }

@@ -179,7 +179,6 @@ impl<F: FieldExt, B:ByteOp> ByteOpChip<F, B> {
     }
 }
 
-// Proves knowledge of `a` and `b` such that `xor(a, b) == c` for public input `c`.
 #[derive(Clone, Default)]
 struct ByteOpCircuit {
     // Private inputs.
