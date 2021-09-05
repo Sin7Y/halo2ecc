@@ -1,7 +1,12 @@
+// Plus chip for filed plus on F_r that does not exceed r
+// Given a sequence of cells, calculated the sum of the cells
+// and then output the carry and remainder of the sum
+
 extern crate halo2;
 
 use std::marker::PhantomData;
 use crate::types::Number;
+use crate::testhelper;
 
 use halo2::{
     arithmetic::FieldExt,
@@ -11,9 +16,19 @@ use halo2::{
 };
 use halo2::{dev::MockProver, pasta::Fp};
 
+
+
+#[derive(Clone, Debug)]
+struct ShortPlusConfig {
+    /// Two fp numbers, three Columns each
+    advice: Column<Advice>,
+    carry: Column<Advice>,
+    sel: Selector,
+}
+
 trait ShortPlus <F: FieldExt>: Chip<F> {
     /// Variable representing a number.
-    fn perform(
+    fn sum (
         &self,
         layouter: impl Layouter<F>,
         inputs: Vec<Number<F>>,
@@ -33,13 +48,7 @@ struct ShortPlusChip<F: FieldExt> {
     _marker: PhantomData<F>,
 }
 
-#[derive(Clone, Debug)]
-struct ShortPlusConfig {
-    /// Two fp numbers, three Columns each
-    advice: Column<Advice>,
-    carry: Column<Advice>,
-    sel: Selector,
-}
+
 
 /// For non overflow sum of a sequence of short numbers we can simply calculate
 /// the sum and produce a carry number plus a remainder
@@ -148,7 +157,7 @@ impl<F: FieldExt> ShortPlus<F> for ShortPlusChip<F> {
         Ok(())
     }
 
-    fn perform(
+    fn sum (
         &self,
         mut layouter: impl Layouter<F>,
         inputs: Vec<Number<F>>,
@@ -178,7 +187,7 @@ impl Circuit<Fp> for TestCircuit {
     fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<Fp>) -> Result<(), Error> {
         println!("Start synthesize ...");
         let op_chip:ShortPlusChip<Fp> = ShortPlusChip::<Fp>::construct(config);
-        op_chip.assign_region(&mut layouter, self.inputs)?;
+        //op_chip.assign_region(&mut layouter, self.inputs)?;
         println!("AllocPrivate ... Done");
         Ok(())
     }
