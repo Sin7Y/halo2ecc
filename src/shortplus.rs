@@ -105,9 +105,12 @@ impl<F: FieldExt> ShortPlusChip<F> {
         let mut sum = F::from(0);
         let mut pos = 0;
         let mut final_sum = None;
+
+
         layouter.assign_region(
             || "load private",
             |mut region| {
+                println!("xixi");
                 for (p, e) in inputs.iter().enumerate() {
                     let sum_cell = region.assign_advice(
                         || format!("s_{}", pos),
@@ -117,12 +120,13 @@ impl<F: FieldExt> ShortPlusChip<F> {
                     )?;
                     let cell = region.assign_advice(
                         || format!("operand_{}", pos),
-                        config.advice,
+                        config.sum,
                         p,
                         || e.value.ok_or(Error::SynthesisError),
                     )?;
                     region.constrain_equal(e.cell, cell)?;
                     sum = sum + e.value.unwrap();
+                    config.sel.enable(&mut region, pos)?;
                     pos += 1;
                     // missing selector enabling
                 }
@@ -132,7 +136,7 @@ impl<F: FieldExt> ShortPlusChip<F> {
                     pos,
                     || Ok(sum),
                 )?;
-                let final_sum = Some (Number {cell, value:Some(sum),});
+                final_sum = Some (Number {cell, value:Some(sum),});
                 Ok(())
             },
         )?;
