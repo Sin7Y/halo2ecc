@@ -6,7 +6,7 @@ extern crate halo2;
 
 use std::marker::PhantomData;
 use crate::types::Number;
-use crate::testhelper;
+use crate::testchip::{TestChip, TestChipTrait, TestConfig};
 
 use halo2::{
     arithmetic::FieldExt,
@@ -22,6 +22,7 @@ use halo2::{dev::MockProver, pasta::Fp};
 struct ShortPlusConfig {
     /// Two fp numbers, three Columns each
     advice: Column<Advice>,
+    sum: Column<Advice>,
     carry: Column<Advice>,
     sel: Selector,
 }
@@ -70,6 +71,10 @@ impl<F: FieldExt> ShortPlusChip<F> {
         let sel = meta.selector();
         let mut c = 0;
 
+        meta.enable_equality(carry.into());
+        meta.enable_equality(sum.into());
+        meta.enable_equality(advice.into());
+
         // Calculate the sum of a list of operands
         // | col0   |  col1   |
         // |--------|---------|
@@ -87,6 +92,7 @@ impl<F: FieldExt> ShortPlusChip<F> {
         ShortPlusConfig {
             advice,
             carry,
+            sum,
             sel,
         }
     }
@@ -118,6 +124,7 @@ impl<F: FieldExt> ShortPlusChip<F> {
                     region.constrain_equal(e.cell, cell)?;
                     sum = sum + e.value.unwrap();
                     pos += 1;
+                    // missing selector enabling
                 }
                 let cell = region.assign_advice(
                     || format!("s_{}", pos),
@@ -172,8 +179,14 @@ struct TestCircuit {
     inputs: Vec<Fp>,
 }
 
+#[derive(Clone, Debug)]
+struct TestCircConfig {
+    pconfig: ShortPlusConfig,
+    tconfig: TestConfig,
+}
+
 impl Circuit<Fp> for TestCircuit {
-    type Config = ShortPlusConfig;
+    type Config = TestCircConfig;
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
@@ -181,13 +194,23 @@ impl Circuit<Fp> for TestCircuit {
     }
 
     fn configure(cs: &mut ConstraintSystem<Fp>) -> Self::Config {
-        ShortPlusChip::<Fp>::configure(cs)
+        TestCircConfig {
+            pconfig: ShortPlusChip::<Fp>::configure(cs),
+            tconfig: TestChip::<Fp>::configure(cs),
+        }
     }
 
     fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<Fp>) -> Result<(), Error> {
         println!("Start synthesize ...");
-        let op_chip:ShortPlusChip<Fp> = ShortPlusChip::<Fp>::construct(config);
-        //op_chip.assign_region(&mut layouter, self.inputs)?;
+        let test_chip = TestChip::<Fp>::construct(config.tconfig);
+        let mut cells = vec![];
+        for i in &self.inputs {
+            let cell = test_chip.load_private(layouter.namespace(|| "cell"), Some(*i))?;
+            cells.push(cell);
+        }
+        let op_chip:ShortPlusChip<Fp> = ShortPlusChip::<Fp>::construct(config.pconfig);
+        let output_cell = op_chip.assign_region(&mut layouter, cells)?;
+        test_chip.expose_public(layouter.namespace(|| "expose c"), output_cell, 0);
         println!("AllocPrivate ... Done");
         Ok(())
     }
@@ -198,12 +221,12 @@ fn circuit() {
     // The number of rows used in the constraint system matrix.
     const PUB_INPUT: u64 = 3;
 
-    let mut pub_inputs = vec![Fp::zero()];
+    let mut pub_inputs = vec![Fp::from(6)];
 
     let circuit = TestCircuit {
         inputs: vec![Fp::from(1), Fp::from(2), Fp::from(3)]
     };
-    let prover = MockProver::run(5, &circuit, vec![]).unwrap();
+    let prover = MockProver::run(5, &circuit, vec![pub_inputs]).unwrap();
     let presult = prover.verify();
     println!("Error {:?}", presult);
 

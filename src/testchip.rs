@@ -10,18 +10,18 @@ use halo2::{
     poly::Rotation,
 };
 
-struct TestChip<F: FieldExt> {
+pub struct TestChip<F: FieldExt> {
     config: TestConfig,
     _marker: PhantomData<F>,
 }
 
 #[derive(Clone, Debug)]
-struct TestConfig {
+pub struct TestConfig {
     advice: Column<Advice>,
     instance: Column<Instance>,
 }
 
-trait TestChipTrait <F: FieldExt>: Chip<F> {
+pub trait TestChipTrait <F: FieldExt>: Chip<F> {
     fn load_private(&self, layouter: impl Layouter<F>, a: Option<F>) -> Result<Number<F>, Error>;
     fn expose_public(
         &self,
@@ -33,7 +33,7 @@ trait TestChipTrait <F: FieldExt>: Chip<F> {
 
 
 impl<F: FieldExt> TestChip<F> {
-    fn construct(config: <Self as Chip<F>>::Config) -> Self {
+    pub fn construct(config: <Self as Chip<F>>::Config) -> Self {
         Self {
             config,
             _marker: PhantomData,
@@ -42,7 +42,7 @@ impl<F: FieldExt> TestChip<F> {
 
     /// Only one row is used to store all the test inputs
 
-    fn configure(
+    pub fn configure(
         meta: &mut ConstraintSystem<F>,
     ) -> <Self as Chip<F>>::Config {
         let advice = meta.advice_column();
@@ -133,9 +133,9 @@ impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         let field_chip = TestChip::<F>::construct(config);
-        let a = field_chip.load_private(layouter.namespace(|| "load a"), self.a)?;
-        let b = field_chip.load_private(layouter.namespace(|| "load b"), self.b)?;
-        field_chip.expose_public(layouter.namespace(|| "expose c"), b, 0)
+        let a = field_chip.load_private(layouter.namespace(|| "load a"), self.a)?; // cursor 0
+        let b = field_chip.load_private(layouter.namespace(|| "load b"), self.b)?; // cursor 1
+        field_chip.expose_public(layouter.namespace(|| "expose c"), a, 0)
     }
 }
 
@@ -152,7 +152,7 @@ fn test() {
     let constant = Fp::from(7);
     let a = Fp::from(2);
     let b = Fp::from(3);
-    let c = Fp::from(3);
+    let c = Fp::from(2);
 
     // Instantiate the circuit with the private inputs.
     let circuit = MyCircuit {
