@@ -102,8 +102,6 @@ impl<F: FieldExt> ShortPlusChip<F> {
         inputs: Vec<Number<F>>
     ) -> Result<Number<F>, Error> {
         let config = self.config();
-        let mut sum = F::from(0);
-        let mut pos = 0;
         let mut final_sum = None;
 
 
@@ -111,16 +109,19 @@ impl<F: FieldExt> ShortPlusChip<F> {
             || "load private",
             |mut region| {
                 println!("xixi");
+                let mut pos = 0;
+                let mut sum = F::from(0);
+
                 for (p, e) in inputs.iter().enumerate() {
                     let sum_cell = region.assign_advice(
                         || format!("s_{}", pos),
-                        config.advice,
+                        config.sum,
                         p,
                         || Ok(sum),
                     )?;
                     let cell = region.assign_advice(
                         || format!("operand_{}", pos),
-                        config.sum,
+                        config.advice,
                         p,
                         || e.value.ok_or(Error::SynthesisError),
                     )?;
@@ -132,7 +133,7 @@ impl<F: FieldExt> ShortPlusChip<F> {
                 }
                 let cell = region.assign_advice(
                     || format!("s_{}", pos),
-                    config.advice,
+                    config.sum,
                     pos,
                     || Ok(sum),
                 )?;
