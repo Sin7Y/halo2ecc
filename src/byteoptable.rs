@@ -26,7 +26,7 @@ impl<Fp: FieldExt> FpRepr<Fp> {
             return Fr::from(0);
         } else if i == 2 {
             return Fr::from_bytes(
-                &[&self.value.to_bytes()[10..20], &[0u8; 22][..]]
+                &[&self.value.to_bytes()[20..32], &[0u8; 20][..]]
                     .concat()
                     .try_into()
                     .unwrap(),
@@ -34,7 +34,7 @@ impl<Fp: FieldExt> FpRepr<Fp> {
             .unwrap();
         } else if i == 1 {
             return Fr::from_bytes(
-                &[&self.value.to_bytes()[20..32], &[0u8; 20][..]]
+                &[&self.value.to_bytes()[10..20], &[0u8; 22][..]]
                     .concat()
                     .try_into()
                     .unwrap(),
@@ -101,7 +101,7 @@ impl<Fr: FieldExt, Fp: FieldExt, B: ByteOp<Fp>> ByteOpChip<Fr, Fp, B> {
         }
     }
 
-    fn configure(cs: &mut ConstraintSystem<Fr>, tbl_col: TableColumn) -> ByteOpChipConfig {
+    fn configure(cs: &mut ConstraintSystem<Fr>) -> ByteOpChipConfig {
         let l_col = cs.advice_column();
         let r_col = cs.advice_column();
         let o_col = cs.advice_column();
@@ -152,7 +152,7 @@ impl<Fr: FieldExt, Fp: FieldExt, B: ByteOp<Fp>> ByteOpChip<Fr, Fp, B> {
                         for s in 0..srange {
                             let offset = l * R_RANGE * S_RANGE + r * S_RANGE + s;
                             let repr = FpRepr::<Fp>::get_op_entry::<B>(l, r);
-                            println!("l: {}, r: {} s:{} o:{:?}", l, r, s, repr.proj::<Fr>(s));
+                            //println!("l: {}, r: {} s:{} o:{:?}", l, r, s, repr.proj::<Fr>(s));
 
                             table.assign_cell(
                                 || "table_idx",
@@ -251,7 +251,17 @@ struct ShiftOp {
 
 impl ByteOp<Fq> for ShiftOp {
     fn bop(x: usize, y: usize) -> Fq {
-        return Fq::from_u64(x as u64) * Fq::from_u64(2u64).pow(&[(y as u64) * (L_RANGE as u64) + 240, 0, 0, 0]);
+        let mut times = (y as u64) * (CHUNCK_BITS as u64) + 240;
+        let mut curr = Fq::from_u64(2u64);
+        let mut acc = Fq::from_u64(x as u64);
+        while times > 0 {
+            if times & 1 == 1 {
+                acc = acc * curr;
+            }
+            curr = curr * curr;
+            times >>= 1;
+        }
+        return acc;
     }
 }
 
@@ -264,8 +274,7 @@ impl Circuit<Fp> for ByteOpCircuit {
     }
 
     fn configure(cs: &mut ConstraintSystem<Fp>) -> Self::Config {
-        let tbl_col = cs.lookup_table_column();
-        ByteOpChip::<Fp, Fq, ShiftOp>::configure(cs, tbl_col)
+        ByteOpChip::<Fp, Fq, ShiftOp>::configure(cs)
     }
 
     fn synthesize(
@@ -298,13 +307,21 @@ fn circuit() {
     let mut pub_inputs = vec![Fp::zero()];
     pub_inputs[PUB_INPUT_ROW] = Fp::from(PUB_INPUT);
 
+    /*
     let circuit = ByteOpCircuit {
         l: Some(Fp::from(123)),
         r: Some(Fp::from(10)),
-        s: Some(Fp::from(0)),
+        s: Some(Fp::from(1)),
         o: Some(Fp::from_u128(709746996383430097242516u128)),
     };
+    */
 
+        let circuit = ByteOpCircuit {
+            l: Some(Fp::from(255)),
+            r: Some(Fp::from(59)),
+            s: Some(Fp::from(1)),
+            o: Some(Fp::from_u128(204053304434175565874536u128)),
+        };
     let prover = MockProver::run(17, &circuit, vec![]).unwrap();
     let presult = prover.verify();
     println!("Error {:?}", presult);
