@@ -10,11 +10,11 @@ use crate::testchip::{TestChip, TestChipTrait, TestConfig};
 
 use halo2::{
     arithmetic::FieldExt,
-    circuit::{Cell, Chip, Layouter, SimpleFloorPlanner},
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed, Instance, Selector},
+    circuit::{Chip, Layouter, SimpleFloorPlanner},
+    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Selector},
+    pasta::Fp,
     poly::Rotation,
 };
-use halo2::{dev::MockProver, pasta::Fp};
 
 
 
@@ -31,13 +31,13 @@ trait ShortPlus <F: FieldExt>: Chip<F> {
     /// Variable representing a number.
     fn sum (
         &self,
-        layouter: impl Layouter<F>,
+        layouter: &mut impl Layouter<F>,
         inputs: Vec<Number<F>>,
     ) -> Result<Number<F>, Error>;
 
     fn expose_carry_remainder(
         &self,
-        layouter: impl Layouter<F>,
+        layouter: &mut impl Layouter<F>,
         remainder: Number<F>,
     ) -> Result<(), Error>;
 
@@ -108,7 +108,6 @@ impl<F: FieldExt> ShortPlusChip<F> {
         layouter.assign_region(
             || "load private",
             |mut region| {
-                println!("xixi");
                 let mut pos = 0;
                 let mut sum = F::from(0);
 
@@ -162,7 +161,7 @@ impl<F: FieldExt> ShortPlus<F> for ShortPlusChip<F> {
 
     fn expose_carry_remainder(
         &self,
-        mut layouter: impl Layouter<F>,
+        layouter: &mut impl Layouter<F>,
         remainder: Number<F>,
     ) -> Result<(), Error> {
         // the final sum = carry * 2^d + remainder
@@ -171,10 +170,10 @@ impl<F: FieldExt> ShortPlus<F> for ShortPlusChip<F> {
 
     fn sum (
         &self,
-        mut layouter: impl Layouter<F>,
+        layouter: &mut impl Layouter<F>,
         inputs: Vec<Number<F>>,
     ) -> Result<Number<F>, Error> {
-        let mut out = None;
+        let out = self.assign_region(layouter, inputs);
         Ok(out.unwrap())
     }
 }
@@ -215,7 +214,7 @@ impl Circuit<Fp> for TestCircuit {
         }
         let op_chip:ShortPlusChip<Fp> = ShortPlusChip::<Fp>::construct(config.pconfig);
         let output_cell = op_chip.assign_region(&mut layouter, cells)?;
-        test_chip.expose_public(layouter.namespace(|| "expose c"), output_cell, 0);
+        test_chip.expose_public(layouter.namespace(|| "expose c"), output_cell, 0)?;
         println!("AllocPrivate ... Done");
         Ok(())
     }
@@ -223,6 +222,7 @@ impl Circuit<Fp> for TestCircuit {
 
 #[test]
 fn circuit() {
+    use halo2::dev::MockProver;
     // The number of rows used in the constraint system matrix.
     const PUB_INPUT: u64 = 3;
 

@@ -5,9 +5,8 @@ use crate::types::Number;
 
 use halo2::{
     arithmetic::FieldExt,
-    circuit::{Cell, Chip, Layouter, Region, SimpleFloorPlanner},
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed, Instance, Selector},
-    poly::Rotation,
+    circuit::{Chip, Layouter, SimpleFloorPlanner},
+    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Instance},
 };
 
 pub struct TestChip<F: FieldExt> {

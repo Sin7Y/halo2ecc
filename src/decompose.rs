@@ -1,9 +1,10 @@
 // Decompose an Fp element into bitwise byte chucks
 
 use std::marker::PhantomData;
+use crate::utils::*;
 use crate::types::Number;
-use ff::{Field, PrimeFieldBits};
 use std::convert::TryFrom;
+use ff::PrimeFieldBits;
 
 use halo2::{
     arithmetic::FieldExt,
@@ -12,24 +13,11 @@ use halo2::{
     pasta::Fp,
     plonk::{
         Advice, Circuit, Column, ConstraintSystem,
-        Error, Expression, Selector
+        Error, Expression, Selector, TableColumn
     },
     poly::Rotation,
 };
 
-fn to_expr<F:FieldExt + PrimeFieldBits>(x:u64) ->Expression<F> {
-    Expression::Constant(F::from_u64(x))
-}
-
-fn decompose_four_bits<F:PrimeFieldBits> (v: F, num_bits:usize) -> Vec<u8>{
-    let bits: Vec<bool> = v.to_le_bits()
-        .into_iter()
-        .take(num_bits)
-        .collect();
-    bits.chunks_exact(num_bits)
-        .map(|chunk| chunk.iter().rev().fold(0, |acc, b| (acc << 1) + (*b as u8)))
-        .collect()
-}
 
 #[derive(Clone, Debug)]
 pub struct DecomposeConfig<F:FieldExt + PrimeFieldBits> {
@@ -62,11 +50,20 @@ impl<F:FieldExt + PrimeFieldBits> DecomposeChip<F> {
         DecomposeChip { config }
     }
 
-    fn configure(cs: &mut ConstraintSystem<Fp>) -> DecomposeConfig<F> {
+    fn configure(cs: &mut ConstraintSystem<Fp>,
+            tbl_d:TableColumn, //domain of table
+        ) -> DecomposeConfig<F> {
         let c = cs.advice_column();
         let r = cs.advice_column();
         let b = cs.advice_column();
         let s = cs.selector();
+
+        // Make sure the remainder does not overflow so that it
+        // equals a range check of each remainder
+        cs.lookup(|meta| {
+          let r_cur = meta.query_advice(r, Rotation::cur());
+          vec![(r_cur, tbl_d)]
+        });
 
         cs.create_gate("range check", |meta| {
             //
@@ -85,13 +82,7 @@ impl<F:FieldExt + PrimeFieldBits> DecomposeChip<F> {
             let b_next = meta.query_advice(b, Rotation::next());
 
             let v = c_cur - c_next * to_expr(4);
-            vec![s * v.clone()
-                   * (v.clone()-to_expr(1))
-                   * (v.clone()-to_expr(2))
-                   * (v.clone()-to_expr(3)),
-                b_next - b_cur * to_expr(2),
-                r_cur - v,
-            ]
+            vec![b_next - b_cur * to_expr(2), r_cur - v]
         });
 
         DecomposeConfig { c, s, remainder:r, basis:b, _marker: PhantomData }

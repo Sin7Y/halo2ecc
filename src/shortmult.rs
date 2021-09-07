@@ -2,7 +2,10 @@ extern crate halo2;
 
 use std::marker::PhantomData;
 use crate::types::Number;
+use crate::utils::*;
+use crate::decompose::*;
 use std::convert::TryFrom;
+use ff::{PrimeFieldBits};
 
 use halo2::{
     arithmetic::FieldExt,
@@ -11,19 +14,21 @@ use halo2::{
     poly::Rotation,
 };
 
-// Short Multiplication for a * b \in [2 ^ (16 * d) .. 2 ^ (16 * c)]
-// let c = a * b then after decompose c into 16 bits as [x_i] we need to lookup table to
+// Short Multiplication for a * b:
+// let c = a * b then after decompose c into 12 bits as [x_i] we need to lookup table to
 // calculate x_i' and then sum x_i to get the final result
 
 #[derive(Clone, Debug)]
 struct ShortMultConfig {
-    decompose: Column<Advice>,
+    c: Column<Advice>,
+    r: Column<Advice>,
     shift: Column<Advice>,
     out: Column<Advice>,
+    sum: Column<Advice>,
     sel: Selector,
 }
 
-trait ShortMult <F: FieldExt>: Chip<F> {
+trait ShortMult <F: FieldExt + PrimeFieldBits>: Chip<F> {
     fn mult (
         &self,
         layouter: impl Layouter<F>,
@@ -32,12 +37,12 @@ trait ShortMult <F: FieldExt>: Chip<F> {
     ) -> Result<Number<F>, Error>;
 }
 
-struct ShortMultChip<F: FieldExt> {
+struct ShortMultChip<F: FieldExt + PrimeFieldBits> {
     config: ShortMultConfig,
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> ShortMultChip<F> {
+impl<F: FieldExt + PrimeFieldBits> ShortMultChip<F> {
     fn construct(config: <Self as Chip<F>>::Config) -> Self {
         Self {
             config,
@@ -46,61 +51,160 @@ impl<F: FieldExt> ShortMultChip<F> {
     }
 
     fn configure(
-        meta: &mut ConstraintSystem<F>,
+        cs: &mut ConstraintSystem<F>,
         lookup_v: TableColumn,
+        lookup_s: TableColumn,
+        lookup_o: TableColumn,
     ) -> <Self as Chip<F>>::Config {
-        let decompose = meta.advice_column();
-        let shift = meta.advice_column();
-        let out = meta.advice_column();
-        let sel = meta.selector();
+        let c = cs.advice_column();
+        let r = cs.advice_column();
+        let shift = cs.advice_column();
+        let out = cs.advice_column();
+        let sum = cs.advice_column();
+        let sel = cs.selector();
+
+        // Make sure the remainder does not overflow so that it
+        // equals a range check of each remainder
+        cs.lookup(|meta| {
+          let r_cur = meta.query_advice(r, Rotation::cur());
+          let shift_cur = meta.query_advice(shift, Rotation::cur());
+          let out_cur = meta.query_advice(shift, Rotation::cur());
+          vec![(r_cur, lookup_v), (shift_cur, lookup_s), (out_cur, lookup_o)]
+        });
+
+        cs.create_gate("range check", |meta| {
+            //
+            // | c_cur   | remainder      | shift      | lookup | sum
+            // | c_next  | remainder_next | shift_next | lookup | sum
+            // .....
+            // | c_final | <- should be zero           |        | sum
+            //
+            let s = meta.query_selector(sel);
+            let c_cur = meta.query_advice(c, Rotation::cur());
+            let sum_cur = meta.query_advice(sum, Rotation::cur());
+            let out_cur = meta.query_advice(out, Rotation::cur());
+            let r_cur = meta.query_advice(out, Rotation::cur());
+            let shift_cur = meta.query_advice(shift, Rotation::cur());
+
+            let c_next = meta.query_advice(c, Rotation::next());
+            let sum_next = meta.query_advice(sum, Rotation::cur());
+            let r_next = meta.query_advice(r, Rotation::next());
+            let shift_next = meta.query_advice(shift, Rotation::next());
+
+            let v = c_cur - c_next * to_expr(4);
+            vec![
+              sum_next - out_cur.clone() - sum_cur,
+              s.clone() * (shift_next - shift_cur - to_expr(1)), // inc the shift amout
+              s * (r_cur - v)          // restrict the remainder
+            ]
+        });
+
         ShortMultConfig {
-            decompose,
+            c,
+            r,
             shift,
             out,
+            sum,
             sel,
         }
     }
 
     fn assign_region(
         &self,
+        input: Number<F>,
         layouter: &mut impl Layouter<F>,
         low: bool, // high 128 bits or low 128 bits
-        chunk_size: usize,
-        shift_start: usize,
-    ) -> Result<(), Error> {
-        let pend = F::from(0);
+        num_chunks: usize,
+        shift_base: F,
+    ) -> Result<Number<F>, Error> {
         let config = self.config();
+        let mut v = input.clone();
         layouter.assign_region(
             || "load private",
             |mut region| {
-                for p in 0 .. chunk_size {
-                    let s:u64 = if p < shift_start { 0 } else {
-                        u64::try_from((p - shift_start)).unwrap()
-                    };
-                    let decompose_cell = region.assign_advice(
-                        || format!("d_{}", p),
-                        config.decompose,
-                        p,
-                        || Ok(pend),
-                    )?;
-                    let shift = region.assign_advice(
-                        || format!("operand_{}", p),
-                        config.shift,
-                        p,
-                        || Ok(F::from_u64(s)),
-                    )?;
-                    //region.constrain_equal(e.cell, cell)?;
-                    //sum = sum + e.value.unwrap();
-                    // missing selector enabling
+                for idx in 0..num_chunks {
+                    config.sel.enable(&mut region, idx)?;
                 }
+                let mut r = v.clone().value.unwrap();
+                let chunks:Vec<u64> = decompose_tweleve_bits::<F>(r, num_chunks);
+                let two_pow_k_inv = F::from_u64(4 as u64).invert().unwrap();
+                let mut shift = shift_base;
+                let mut sum:F = F::zero();
+
+                // assign c_0 and sum_0 as initial rows
+                // | c_0 | remainder      | shift      | output | sum_0
+
+                region.assign_advice (
+                  || format!("r_{:?}", 0),
+                  config.c,
+                  0,
+                  || Ok(v.clone().value.unwrap())
+                )?;
+
+                region.assign_advice (
+                  || format!("r_{:?}", 0),
+                  config.sum,
+                  0,
+                  || Ok(F::zero())
+                )?;
+
+                for (p, chunk) in chunks.iter().enumerate() {
+                    let chunk_fp = F::from_u64(u64::try_from(*chunk).unwrap());
+                    let chunk_next = (r - chunk_fp) * two_pow_k_inv;
+                    let lookup = get_shift_lookup(chunk_fp, shift);
+                    sum = sum + lookup;
+
+                    // set the remainder at position p
+                    region.assign_advice (
+                      || format!("r_{:?}", p),
+                      config.r,
+                      p,
+                      || Ok(chunk_fp)
+                    )?;
+
+                    // set the shift at position p
+                    region.assign_advice (
+                      || format!("s_{:?}", p),
+                      config.shift,
+                      p,
+                      || Ok(shift)
+                    )?;
+
+                    // set the out at position p
+                    region.assign_advice (
+                      || format!("s_{:?}", p),
+                      config.out,
+                      p,
+                      || Ok(lookup)
+                    )?;
+
+                    // set the next chunk
+                    region.assign_advice (
+                      || format!("c_{:?}", p + 1),
+                      config.c,
+                      p + 1,
+                      || Ok(chunk_next)
+                    )?;
+
+                    // set the out at position p
+                    let sum = region.assign_advice (
+                      || format!("sum_{:?}", p+1),
+                      config.sum,
+                      p+1,
+                      || Ok(sum)
+                    )?;
+                    r = chunk_next;
+                    shift = shift + F::one();
+                    v = Number::<F>{cell: sum, value: Some(chunk_next)}
+                };
                 Ok(())
             },
         )?;
-        Ok(())
+        Ok(v)
     }
 }
 
-impl<F: FieldExt> Chip<F> for ShortMultChip<F> {
+impl<F: FieldExt + PrimeFieldBits> Chip<F> for ShortMultChip<F> {
     type Config = ShortMultConfig;
     type Loaded = ();
 
@@ -113,14 +217,14 @@ impl<F: FieldExt> Chip<F> for ShortMultChip<F> {
     }
 }
 
-impl<F: FieldExt> ShortMult<F> for ShortMultChip<F> {
+impl<F: FieldExt + PrimeFieldBits> ShortMult<F> for ShortMultChip<F> {
     fn mult(
         &self,
         mut layouter: impl Layouter<F>,
         a: Number<F>,
         b: Number<F>,
     ) -> Result<Number<F>, Error> {
-        let mut out = None;
+        let out = None;
         Ok(out.unwrap())
     }
 }

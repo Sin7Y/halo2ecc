@@ -43,8 +43,8 @@ const BYTE_BITS: usize = 8;
 
 struct ByteOpChip<F: FieldExt, B:ByteOp> {
     config: ByteOpChipConfig,
-    _markerF: PhantomData<F>,
-    _markerB: PhantomData<B>,
+    _marker_f: PhantomData<F>,
+    _marker_b: PhantomData<B>,
 }
 
 #[derive(Clone, Debug)]
@@ -72,7 +72,7 @@ impl<F:FieldExt, B:ByteOp> Chip<F> for ByteOpChip<F, B> {
 
 impl<F: FieldExt, B:ByteOp> ByteOpChip<F, B> {
     fn new(config: ByteOpChipConfig) -> Self {
-        ByteOpChip { config, _markerF: PhantomData, _markerB: PhantomData }
+        ByteOpChip { config, _marker_f: PhantomData, _marker_b: PhantomData }
     }
 
     fn configure(cs: &mut ConstraintSystem<F>, tbl_col:TableColumn) -> ByteOpChipConfig {
@@ -105,7 +105,6 @@ impl<F: FieldExt, B:ByteOp> ByteOpChip<F, B> {
         layouter.assign_table(
             || "u16-op-table",
             |mut table| {
-                let mut row_offset = 0;
                 for l in 0..1 << BYTE_BITS {
                     for r in 0..1 << BYTE_BITS {
                         let repr = FpRepr::<B>::get_op_entry(BigUint::from(l),

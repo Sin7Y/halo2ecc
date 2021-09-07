@@ -1,4 +1,5 @@
 mod types;
+mod utils;
 mod testchip;
 mod decompose;
 mod shortplus;
