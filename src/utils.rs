@@ -6,6 +6,21 @@ use halo2::{
 
 use ff::PrimeFieldBits;
 
+pub fn pow2<F:FieldExt>(y: u64) -> F {
+    let mut times = y as u64;
+    let mut curr = F::from_u64(2u64);
+    let mut acc = F::from_u64(1);
+    while times > 0 {
+        if times & 1 == 1 {
+            acc = acc * curr;
+        }
+        curr = curr * curr;
+        times >>= 1;
+    }
+    return acc;
+}
+
+
 pub fn decompose_four_bits<F:PrimeFieldBits> (v: F, num_bits:usize) -> Vec<u8>{
     let bits: Vec<bool> = v.to_le_bits()
         .into_iter()

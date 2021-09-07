@@ -5,21 +5,21 @@ use halo2::{
 };
 
 use std::marker::PhantomData;
+use ff::PrimeFieldBits;
 
-#[derive(Clone)]
-pub struct FieldNum<F:FieldExt> {
-    cells: Cell,
-    value: F,
+#[derive(Clone, Debug)]
+pub struct FsAdvice<F: FieldExt + PrimeFieldBits> {
+    pub advices: [Column<Advice>; 3],
+    pub _marker: PhantomData<F>,
 }
 
-#[derive(Clone)]
-pub struct FieldNumAdvice<F: FieldExt> {
-    advices: [Column<Advice>; 3],
-    _marker: PhantomData<F>,
-}
-
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Number<F: FieldExt> {
     pub cell: Cell,
     pub value: Option<F>,
+}
+
+#[derive(Clone, Debug)]
+pub struct Fs<F:FieldExt + PrimeFieldBits> {
+    pub values: [Number<F>; 3],
 }

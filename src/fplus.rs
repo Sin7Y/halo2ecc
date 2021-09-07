@@ -5,34 +5,32 @@ use halo2::{
 };
 
 use std::marker::PhantomData;
-use crate::types::FieldNum;
+use crate::types::{Fs, FsAdvice};
+use ff::PrimeFieldBits;
 
-trait FPlus <F: FieldExt>: Chip<F> {
-    /// Variable representing a number.
-    type Num;
-
-    fn perform (
+trait FPlus <F: FieldExt + PrimeFieldBits>: Chip<F> {
+    fn plus (
         &self,
         layouter: impl Layouter<F>,
-        a: Self::Num,
-        b: Self::Num,
-    ) -> Result<Self::Num, Error>;
+        a: Fs<F>,
+        b: Fs<F>,
+    ) -> Result<FsAdvice<F>, Error>;
 }
 
-struct FPlusChip<F: FieldExt> {
-    config: FPlusConfig,
+struct FPlusChip<F: FieldExt + PrimeFieldBits> {
+    config: FPlusConfig<F>,
     _marker: PhantomData<F>,
 }
 
 #[derive(Clone, Debug)]
-struct FPlusConfig {
+struct FPlusConfig<F: FieldExt + PrimeFieldBits> {
     /// Two fp numbers, three Columns each
-    advice: [Column<Advice>; 6],
-    instance: [Column<Instance>; 3],
+    x: FsAdvice<F>,
+    y: FsAdvice<F>,
     sel: Selector,
 }
 
-impl<F: FieldExt> FPlusChip<F> {
+impl<F: FieldExt + PrimeFieldBits> FPlusChip<F> {
     fn construct(config: <Self as Chip<F>>::Config) -> Self {
         Self {
             config,
@@ -43,30 +41,28 @@ impl<F: FieldExt> FPlusChip<F> {
     fn create_gate(
         meta: &mut ConstraintSystem<F>,
     ) -> <Self as Chip<F>>::Config {
-        let advice = [
+        let x = FsAdvice::<F> {advices: [
           meta.advice_column(),
           meta.advice_column(),
           meta.advice_column(),
+        ], _marker: PhantomData};
+        let y = FsAdvice::<F> {advices: [
           meta.advice_column(),
           meta.advice_column(),
           meta.advice_column(),
-        ];
-        let instance = [
-          meta.instance_column(),
-          meta.instance_column(),
-          meta.instance_column(),
-        ];
+        ], _marker: PhantomData};
+
         let sel = meta.selector();
         FPlusConfig {
-            advice,
-            instance,
+            x,
+            y,
             sel,
         }
     }
 }
 
-impl<F: FieldExt> Chip<F> for FPlusChip<F> {
-    type Config = FPlusConfig;
+impl<F: FieldExt + PrimeFieldBits> Chip<F> for FPlusChip<F> {
+    type Config = FPlusConfig<F>;
     type Loaded = ();
 
     fn config(&self) -> &Self::Config {
@@ -78,15 +74,13 @@ impl<F: FieldExt> Chip<F> for FPlusChip<F> {
     }
 }
 
-impl<F: FieldExt> FPlus<F> for FPlusChip<F> {
-    type Num = FieldNum<F>;
-
-    fn perform(
+impl<F: FieldExt + PrimeFieldBits> FPlus<F> for FPlusChip<F> {
+    fn plus(
         &self,
         mut layouter: impl Layouter<F>,
-        a: Self::Num,
-        b: Self::Num,
-    ) -> Result<Self::Num, Error> {
+        a: Fs<F>,
+        b: Fs<F>,
+    ) -> Result<FsAdvice<F>, Error> {
         let mut out = None;
         Ok(out.unwrap())
     }

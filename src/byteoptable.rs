@@ -1,5 +1,4 @@
 use halo2::{
-    dev::{MockProver, VerifyFailure},
     pasta::{Fp, Fq},
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, TableColumn},
     poly::Rotation,
@@ -291,6 +290,8 @@ impl Circuit<Fp> for ByteOpCircuit {
 
 #[test]
 fn circuit() {
+    use dev::{MockProver, VerifyFailure};
+
     // The number of rows used in the constraint system matrix.
     const N_ROWS_USED: u32 = 256;
 
