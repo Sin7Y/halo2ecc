@@ -15,12 +15,12 @@ trait ByteOp<F: FieldExt> {
     fn bop(op1: usize, op2: usize) -> F;
 }
 
-struct FpRepr<Fp: FieldExt> {
-    value: Fp,
+pub struct FpRepr<Fp: FieldExt> {
+    pub value: Fp,
 }
 
 impl<Fp: FieldExt> FpRepr<Fp> {
-    fn proj<Fr: FieldExt>(&self, i: usize) -> Fr {
+    pub fn proj<Fr: FieldExt>(&self, i: usize) -> Fr {
         if i > 2 {
             return Fr::from(0);
         } else if i == 2 {

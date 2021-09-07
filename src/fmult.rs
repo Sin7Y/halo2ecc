@@ -8,6 +8,7 @@ use halo2::{
 use std::marker::PhantomData;
 use crate::types::{Fs, FsAdvice, Number};
 use crate::utils::*;
+use crate::byteoptable::FpRepr;
 use ff::PrimeFieldBits;
 
 trait FMult <F: FieldExt + PrimeFieldBits>: Chip<F> {
@@ -166,7 +167,9 @@ impl<F: FieldExt + PrimeFieldBits> FMult<F> for FMultChip<F> {
                  + (xl*ym + xm * yl)*shift_80;
 
         // Keep little end
-        let ch_s = [F::zero(), F::zero(), F::zero()];
+        // can skip Fr to Fp since it does not overflow
+        let ch_repr = FpRepr::<F>{value:ch};
+        let ch_s = [ch_repr.proj::<F>(0), F::zero(), F::zero()];
         let cm_s = [F::zero(), F::zero(), F::zero()];
         let cl_s = [F::zero(), F::zero(), F::zero()];
 
@@ -177,6 +180,24 @@ impl<F: FieldExt + PrimeFieldBits> FMult<F> for FMultChip<F> {
         layouter.assign_region(
             || "load private",
             |mut region| {
+                region.assign_advice(
+                    || format!("c_{}", 0),
+                    config.x.advices[0],
+                    1,
+                    || Ok(cl),
+                )?;
+                region.assign_advice(
+                    || format!("c_{}", 1),
+                    config.x.advices[1],
+                    1,
+                    || Ok(cm),
+                )?;
+                region.assign_advice(
+                    || format!("c_{}", 2),
+                    config.x.advices[2],
+                    1,
+                    || Ok(ch),
+                )?;
                 for i in 0..2 {
                     region.assign_advice(
                         || format!("x_{}", i),
@@ -212,24 +233,6 @@ impl<F: FieldExt + PrimeFieldBits> FMult<F> for FMultChip<F> {
                         || Ok(cm_s[i]),
                     )?;
                 }
-                region.assign_advice(
-                    || format!("c_{}", 0),
-                    config.x.advices[0],
-                    1,
-                    || Ok(cl),
-                )?;
-                region.assign_advice(
-                    || format!("c_{}", 1),
-                    config.x.advices[1],
-                    1,
-                    || Ok(cm),
-                )?;
-                region.assign_advice(
-                    || format!("c_{}", 2),
-                    config.x.advices[2],
-                    1,
-                    || Ok(ch),
-                )?;
                 let cell0 = region.assign_advice(
                     || format!("o_{}", 0),
                     config.y.advices[0],

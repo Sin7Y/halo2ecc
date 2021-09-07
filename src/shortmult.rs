@@ -1,3 +1,4 @@
+#![feature(array_map)]
 extern crate halo2;
 
 use std::marker::PhantomData;
@@ -23,8 +24,8 @@ struct ShortMultConfig {
     c: Column<Advice>,
     r: Column<Advice>,
     shift: Column<Advice>,
-    out: Column<Advice>,
-    sum: Column<Advice>,
+    out: [Column<Advice>;3],
+    sum: [Column<Advice>;3],
     sel: Selector,
 }
 
@@ -54,13 +55,14 @@ impl<F: FieldExt + PrimeFieldBits> ShortMultChip<F> {
         cs: &mut ConstraintSystem<F>,
         lookup_v: TableColumn,
         lookup_s: TableColumn,
+        lookup_i: TableColumn,
         lookup_o: TableColumn,
     ) -> <Self as Chip<F>>::Config {
         let c = cs.advice_column();
         let r = cs.advice_column();
         let shift = cs.advice_column();
-        let out = cs.advice_column();
-        let sum = cs.advice_column();
+        let out = [cs.advice_column(), cs.advice_column(), cs.advice_column()];
+        let sum = [cs.advice_column(), cs.advice_column(), cs.advice_column()];
         let sel = cs.selector();
 
         // Make sure the remainder does not overflow so that it
@@ -68,21 +70,21 @@ impl<F: FieldExt + PrimeFieldBits> ShortMultChip<F> {
         cs.lookup(|meta| {
           let r_cur = meta.query_advice(r, Rotation::cur());
           let shift_cur = meta.query_advice(shift, Rotation::cur());
-          let out_cur = meta.query_advice(shift, Rotation::cur());
-          vec![(r_cur, lookup_v), (shift_cur, lookup_s), (out_cur, lookup_o)]
+          let out_cur = meta.query_advice(out[0], Rotation::cur());
+          vec![(r_cur, lookup_v), (shift_cur, lookup_s), (out_cur, lookup_o), (to_expr(0), lookup_i)]
         });
-
+        /*
         cs.create_gate("range check", |meta| {
             //
-            // | c_cur   | remainder      | shift      | lookup | sum
-            // | c_next  | remainder_next | shift_next | lookup | sum
+            // | c_cur   | remainder      | shift      | l0 | l1 | l2 | sum0 | sum1 | sum2
+            // | c_next  | remainder_next | shift_next | l0 | l1 | l2 | sum0 | sum1 | sum2
             // .....
-            // | c_final | <- should be zero           |        | sum
+            // | c_final | <- should be zero           |              | sum0 | sum1 | sum2
             //
             let s = meta.query_selector(sel);
             let c_cur = meta.query_advice(c, Rotation::cur());
-            let sum_cur = meta.query_advice(sum, Rotation::cur());
-            let out_cur = meta.query_advice(out, Rotation::cur());
+            let sum_cur = sum.map(|sum| meta.query_advice(sum, Rotation::cur()));
+            let out_cur = out.map(|out| meta.query_advice(out, Rotation::cur()));
             let r_cur = meta.query_advice(out, Rotation::cur());
             let shift_cur = meta.query_advice(shift, Rotation::cur());
 
@@ -98,6 +100,7 @@ impl<F: FieldExt + PrimeFieldBits> ShortMultChip<F> {
               s * (r_cur - v)          // restrict the remainder
             ]
         });
+        */
 
         ShortMultConfig {
             c,
@@ -143,7 +146,7 @@ impl<F: FieldExt + PrimeFieldBits> ShortMultChip<F> {
 
                 region.assign_advice (
                   || format!("r_{:?}", 0),
-                  config.sum,
+                  config.sum[0],
                   0,
                   || Ok(F::zero())
                 )?;
@@ -173,7 +176,7 @@ impl<F: FieldExt + PrimeFieldBits> ShortMultChip<F> {
                     // set the out at position p
                     region.assign_advice (
                       || format!("s_{:?}", p),
-                      config.out,
+                      config.out[0],
                       p,
                       || Ok(lookup)
                     )?;
@@ -189,7 +192,7 @@ impl<F: FieldExt + PrimeFieldBits> ShortMultChip<F> {
                     // set the out at position p
                     let sum = region.assign_advice (
                       || format!("sum_{:?}", p+1),
-                      config.sum,
+                      config.sum[0],
                       p+1,
                       || Ok(sum)
                     )?;
