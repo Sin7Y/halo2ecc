@@ -1,49 +1,67 @@
 use halo2::{
     dev::{MockProver, VerifyFailure},
-    pasta::Fp,
-    plonk::{Advice, Assignment, Circuit, Column, ConstraintSystem, Error, Fixed, Selector, TableColumn},
+    pasta::{Fp, Fq},
+    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, TableColumn},
     poly::Rotation,
 };
 
-use halo2::circuit::{Region, Cell, Chip, Layouter, SimpleFloorPlanner};
 use halo2::arithmetic::FieldExt;
+use halo2::circuit::{Chip, Layouter, SimpleFloorPlanner};
 
 use num_bigint::BigUint;
+use std::convert::TryInto;
 use std::marker::PhantomData;
 
-trait ByteOp {
-    fn bop(op1: BigUint, op2: BigUint) -> BigUint;
+trait ByteOp<F: FieldExt> {
+    fn bop(op1: usize, op2: usize) -> F;
 }
 
-struct FpRepr<B: ByteOp> {
-    values: Vec<u8>,
-    _marker: PhantomData<B>,
+struct FpRepr<Fp: FieldExt> {
+    value: Fp,
 }
 
-impl<B: ByteOp> FpRepr<B> {
-    fn proj(&self, i:usize) -> u8 {
-        if(i >= self.values.len()) {
-            return 0;
+impl<Fp: FieldExt> FpRepr<Fp> {
+    fn proj<Fr: FieldExt>(&self, i: usize) -> Fr {
+        if i > 2 {
+            return Fr::from(0);
+        } else if i == 2 {
+            return Fr::from_bytes(
+                &[&self.value.to_bytes()[10..20], &[0u8; 22][..]]
+                    .concat()
+                    .try_into()
+                    .unwrap(),
+            )
+            .unwrap();
+        } else if i == 1 {
+            return Fr::from_bytes(
+                &[&self.value.to_bytes()[20..32], &[0u8; 20][..]]
+                    .concat()
+                    .try_into()
+                    .unwrap(),
+            )
+            .unwrap();
         } else {
-            return self.values[i];
+            return Fr::from_bytes(
+                &[&self.value.to_bytes()[0..10], &[0u8; 22][..]]
+                    .concat()
+                    .try_into()
+                    .unwrap(),
+            )
+            .unwrap();
         }
     }
-    fn repr (&self) -> BigUint {
-        BigUint::from_bytes_le(&self.values)
-    }
-    fn get_op_entry (seg_x:BigUint, seg_y:BigUint, basis: u32) -> FpRepr<B> {
+
+    fn get_op_entry<B: ByteOp<Fp>>(x: usize, y: usize) -> FpRepr<Fp> {
         FpRepr {
-            values: (B::bop (seg_x, seg_y) << basis).to_bytes_le(),
-            _marker: PhantomData,
+            value: B::bop(x, y),
         }
     }
 }
 
-const BYTE_BITS: usize = 8;
-
-struct ByteOpChip<F: FieldExt, B:ByteOp> {
+struct ByteOpChip<Fr: FieldExt, Fp: FieldExt, B: ByteOp<Fp>> {
     config: ByteOpChipConfig,
-    _marker_f: PhantomData<F>,
+    _marker_fr: PhantomData<Fr>,
+    _marker_fp: PhantomData<Fp>,
     _marker_b: PhantomData<B>,
 }
 
@@ -52,12 +70,15 @@ struct ByteOpChipConfig {
     l_col: Column<Advice>,
     r_col: Column<Advice>,
     o_col: Column<Advice>,
-    tbl_o: TableColumn,
+    s_col: Column<Advice>,
+
     tbl_l: TableColumn,
     tbl_r: TableColumn,
+    tbl_o: TableColumn,
+    tbl_s: TableColumn,
 }
 
-impl<F:FieldExt, B:ByteOp> Chip<F> for ByteOpChip<F, B> {
+impl<Fr: FieldExt, Fp: FieldExt, B: ByteOp<Fp>> Chip<Fr> for ByteOpChip<Fr, Fp, B> {
     type Config = ByteOpChipConfig;
     type Loaded = ();
 
@@ -70,107 +91,137 @@ impl<F:FieldExt, B:ByteOp> Chip<F> for ByteOpChip<F, B> {
     }
 }
 
-impl<F: FieldExt, B:ByteOp> ByteOpChip<F, B> {
+impl<Fr: FieldExt, Fp: FieldExt, B: ByteOp<Fp>> ByteOpChip<Fr, Fp, B> {
     fn new(config: ByteOpChipConfig) -> Self {
-        ByteOpChip { config, _marker_f: PhantomData, _marker_b: PhantomData }
+        ByteOpChip {
+            config,
+            _marker_fr: PhantomData,
+            _marker_fp: PhantomData,
+            _marker_b: PhantomData,
+        }
     }
 
-    fn configure(cs: &mut ConstraintSystem<F>, tbl_col:TableColumn) -> ByteOpChipConfig {
+    fn configure(cs: &mut ConstraintSystem<Fr>, tbl_col: TableColumn) -> ByteOpChipConfig {
         let l_col = cs.advice_column();
         let r_col = cs.advice_column();
         let o_col = cs.advice_column();
+        let s_col = cs.advice_column();
+
         let tbl_l = cs.lookup_table_column();
         let tbl_r = cs.lookup_table_column();
         let tbl_o = cs.lookup_table_column();
+        let tbl_s = cs.lookup_table_column();
 
         cs.lookup(|meta| {
-          let l_cur = meta.query_advice(l_col, Rotation::cur());
-          let r_cur = meta.query_advice(r_col, Rotation::cur());
-          let o_cur = meta.query_advice(o_col, Rotation::cur());
-          vec![(l_cur, tbl_l), (r_cur, tbl_r), (o_cur, tbl_o)]
+            let l_cur = meta.query_advice(l_col, Rotation::cur());
+            let r_cur = meta.query_advice(r_col, Rotation::cur());
+            let o_cur = meta.query_advice(o_col, Rotation::cur());
+            let s_cur = meta.query_advice(s_col, Rotation::cur());
+            vec![
+                (l_cur, tbl_l),
+                (r_cur, tbl_r),
+                (o_cur, tbl_o),
+                (s_cur, tbl_s),
+            ]
         });
 
         ByteOpChipConfig {
             l_col,
             r_col,
             o_col,
+            s_col,
             tbl_l,
             tbl_r,
             tbl_o,
+            tbl_s,
         }
     }
 
-    // `2^BYTE_BITS * 2^BYTE_BITS = 2^16` rows of the constraint system.
-    fn alloc_table(&self, layouter: &mut impl Layouter<F>, basis:u32, idx:usize) -> Result<(), Error> {
+    fn alloc_table(
+        &self,
+        layouter: &mut impl Layouter<Fr>,
+        lrange: usize,
+        rrange: usize,
+        srange: usize,
+    ) -> Result<(), Error> {
         layouter.assign_table(
-            || "u16-op-table",
+            || "shift-table",
             |mut table| {
-                for l in 0..1 << BYTE_BITS {
-                    for r in 0..1 << BYTE_BITS {
-                        let repr = FpRepr::<B>::get_op_entry(BigUint::from(l),
-                                BigUint::from(r),
-                                basis);
-                        println!("l: {}, r: {} v:{:?}", l, r, repr.proj(idx));
-                        println!("value: {}", l * (1<<BYTE_BITS) + r);
-                        table.assign_cell(
-                            || "table_idx",
-                            self.config.tbl_o,
-                            l * (1<< BYTE_BITS) + r,
-                            || Ok(F::from_u64(repr.proj(idx).into()))
-                        )?;
-                        table.assign_cell(
-                            || "table_idx",
-                            self.config.tbl_l,
-                            l * (1<< BYTE_BITS) + r,
-                            || Ok(F::from_u64(l as u64))
-                        )?;
-                        table.assign_cell(
-                            || "table_idx",
-                            self.config.tbl_r,
-                            l * (1<< BYTE_BITS) + r,
-                            || Ok(F::from_u64(r as u64))
-                        )?;
+                for l in 0..lrange {
+                    for r in 0..rrange {
+                        for s in 0..srange {
+                            let offset = l * R_RANGE * S_RANGE + r * S_RANGE + s;
+                            let repr = FpRepr::<Fp>::get_op_entry::<B>(l, r);
+                            println!("l: {}, r: {} s:{} o:{:?}", l, r, s, repr.proj::<Fr>(s));
+
+                            table.assign_cell(
+                                || "table_idx",
+                                self.config.tbl_o,
+                                offset,
+                                || Ok(repr.proj::<Fr>(s)),
+                            )?;
+
+                            table.assign_cell(
+                                || "table_idx",
+                                self.config.tbl_l,
+                                offset,
+                                || Ok(Fr::from_u64(l as u64)),
+                            )?;
+
+                            table.assign_cell(
+                                || "table_idx",
+                                self.config.tbl_r,
+                                offset,
+                                || Ok(Fr::from_u64(r as u64)),
+                            )?;
+                            table.assign_cell(
+                                || "table_idx",
+                                self.config.tbl_s,
+                                offset,
+                                || Ok(Fr::from_u64(s as u64)),
+                            )?;
+                        }
                     }
                 }
-                println!("cb");
                 Ok(())
-            }
+            },
         )
     }
 
-    // Allocates `a`, `b`, and `c` and enables `s_pub` in row #0, i.e. the first available row where
-    // the `l_col`, `r_col`, and `o_col` cells have not been alloacted.
     fn alloc_private_and_public_inputs(
         &self,
-        layouter: &mut impl Layouter<F>,
-        a: Option<F>,
-        b: Option<F>,
-        c: Option<F>,
+        layouter: &mut impl Layouter<Fr>,
+        ol: Option<Fr>,
+        or: Option<Fr>,
+        os: Option<Fr>,
+        oo: Option<Fr>,
     ) -> Result<(), Error> {
-        let va = a.unwrap();
-        let vb = b.unwrap();
         layouter.assign_region(
             || "private and public inputs",
             |mut region| {
-                let row_offset = 0;
-                //self.config.s_pub.enable(&mut region, row_offset)?;
                 region.assign_advice(
-                    || "private input `a`",
+                    || "private input `l`",
                     self.config.l_col,
-                    row_offset,
-                    || a.ok_or(Error::SynthesisError),
+                    0,
+                    || ol.ok_or(Error::SynthesisError),
                 )?;
                 region.assign_advice(
-                    || "private input `b`",
+                    || "private input `r`",
                     self.config.r_col,
-                    row_offset,
-                    || b.ok_or(Error::SynthesisError),
+                    0,
+                    || or.ok_or(Error::SynthesisError),
                 )?;
                 region.assign_advice(
-                    || "private input `b`",
+                    || "private input `s`",
+                    self.config.s_col,
+                    0,
+                    || os.ok_or(Error::SynthesisError),
+                )?;
+                region.assign_advice(
+                    || "private input `v`",
                     self.config.o_col,
-                    row_offset,
-                    || c.ok_or(Error::SynthesisError),
+                    0,
+                    || oo.ok_or(Error::SynthesisError),
                 )?;
                 Ok(())
             },
@@ -181,19 +232,26 @@ impl<F: FieldExt, B:ByteOp> ByteOpChip<F, B> {
 #[derive(Clone, Default)]
 struct ByteOpCircuit {
     // Private inputs.
-    a: Option<Fp>,
-    b: Option<Fp>,
+    l: Option<Fp>,
+    r: Option<Fp>,
+    s: Option<Fp>,
+
     // Public input (from prover).
-    c: Option<Fp>,
+    o: Option<Fp>,
 }
 
-struct PlusOp {
-    m: PhantomData<()>
+const CHUNCK_BITS: usize = 8;
+const L_RANGE: usize = 1 << CHUNCK_BITS;
+const R_RANGE: usize = 256 * 2 / CHUNCK_BITS;
+const S_RANGE: usize = 3;
+
+struct ShiftOp {
+    m: PhantomData<()>,
 }
 
-impl ByteOp for PlusOp {
-    fn bop (x:BigUint, y:BigUint) -> BigUint {
-        x + y
+impl ByteOp<Fq> for ShiftOp {
+    fn bop(x: usize, y: usize) -> Fq {
+        return Fq::from_u64(x as u64) * Fq::from_u64(2u64).pow(&[(y as u64) * (L_RANGE as u64) + 240, 0, 0, 0]);
     }
 }
 
@@ -202,22 +260,22 @@ impl Circuit<Fp> for ByteOpCircuit {
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
-      Self::default()
+        Self::default()
     }
 
     fn configure(cs: &mut ConstraintSystem<Fp>) -> Self::Config {
         let tbl_col = cs.lookup_table_column();
-        ByteOpChip::<Fp, PlusOp>::configure(cs, tbl_col)
+        ByteOpChip::<Fp, Fq, ShiftOp>::configure(cs, tbl_col)
     }
 
-    fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<Fp>) -> Result<(), Error> {
-        println!("Start synthesize ...");
-        let op_chip = ByteOpChip::<Fp, PlusOp>::new(config);
-        println!("CreateOpChip ... Done");
-        op_chip.alloc_table(&mut layouter, 0, 0)?;
-        println!("AllocTable ... Done");
-        op_chip.alloc_private_and_public_inputs(&mut layouter, self.a, self.b, self.c)?;
-        println!("AllocPrivate ... Done");
+    fn synthesize(
+        &self,
+        config: Self::Config,
+        mut layouter: impl Layouter<Fp>,
+    ) -> Result<(), Error> {
+        let op_chip = ByteOpChip::<Fp, Fq, ShiftOp>::new(config);
+        op_chip.alloc_table(&mut layouter, L_RANGE, R_RANGE, S_RANGE)?;
+        op_chip.alloc_private_and_public_inputs(&mut layouter, self.l, self.r, self.s, self.o)?;
         Ok(())
     }
 }
@@ -241,10 +299,12 @@ fn circuit() {
     pub_inputs[PUB_INPUT_ROW] = Fp::from(PUB_INPUT);
 
     let circuit = ByteOpCircuit {
-        a: Some(Fp::from(255)),
-        b: Some(Fp::from(255)),
-        c: Some(Fp::from(254)),
+        l: Some(Fp::from(123)),
+        r: Some(Fp::from(10)),
+        s: Some(Fp::from(0)),
+        o: Some(Fp::from_u128(709746996383430097242516u128)),
     };
+
     let prover = MockProver::run(17, &circuit, vec![]).unwrap();
     let presult = prover.verify();
     println!("Error {:?}", presult);
@@ -288,4 +348,3 @@ fn circuit() {
     };
     */
 }
-
