@@ -8,6 +8,8 @@ use crate::decompose::*;
 use std::convert::TryFrom;
 use ff::{PrimeFieldBits};
 
+use crate::byteoptable::{FpRepr, ShiftOpChip};
+
 use halo2::{
     arithmetic::FieldExt,
     circuit::{Cell, Chip, Layouter, Region, SimpleFloorPlanner},
@@ -25,7 +27,7 @@ use halo2::{
 // calculate x_i' and then sum x_i to get the final result
 
 #[derive(Clone, Debug)]
-struct ShortMultConfig {
+pub struct ShortMultConfig {
     c: Column<Advice>,
     r: Column<Advice>,
     shift: Column<Advice>,
@@ -34,25 +36,28 @@ struct ShortMultConfig {
     sel: Selector,
 }
 
-trait ShortMult <F: FieldExt + PrimeFieldBits>: Chip<F> {
-    fn mult (
+pub trait ShortMult <F: FieldExt + PrimeFieldBits>: Chip<F> {
+    fn constrain (
         &self,
         layouter: &mut impl Layouter<F>,
         a: Number<F>,
+        o: Fs<F>,
         num_chunks: usize,
         shift_base: F,
     ) -> Result<Fs<F>, Error>;
 }
 
-struct ShortMultChip<F: FieldExt + PrimeFieldBits> {
+pub struct ShortMultChip<F: FieldExt + PrimeFieldBits> {
     config: ShortMultConfig,
+    shift_chip: ShiftOpChip<F>,
     _marker: PhantomData<F>,
 }
 
 impl<F: FieldExt + PrimeFieldBits> ShortMultChip<F> {
-    fn construct(config: <Self as Chip<F>>::Config) -> Self {
+    fn construct(config: <Self as Chip<F>>::Config, shift_chip:ShiftOpChip<F>) -> Self {
         Self {
             config,
+            shift_chip,
             _marker: PhantomData,
         }
     }
@@ -246,10 +251,11 @@ impl<F: FieldExt + PrimeFieldBits> Chip<F> for ShortMultChip<F> {
 }
 
 impl<F: FieldExt + PrimeFieldBits> ShortMult<F> for ShortMultChip<F> {
-    fn mult(
+    fn constrain(
         &self,
         layouter: &mut impl Layouter<F>,
         a: Number<F>,
+        o: Fs<F>,
         num_chunks: usize,
         shift_base: F,
     ) -> Result<Fs<F>, Error> {

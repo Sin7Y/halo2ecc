@@ -1,20 +1,25 @@
 use halo2::{
     arithmetic::FieldExt,
-    circuit::{Chip, Layouter},
-    plonk::{Advice, Column, ConstraintSystem, Error, Instance, Selector, Expression},
+    circuit::{Chip, Layouter, Region, Cell},
+    plonk::{
+        Advice, Column, ConstraintSystem,
+        Error, Instance,
+        Selector, Expression
+    },
     poly::Rotation,
 };
 
 use std::marker::PhantomData;
 use crate::types::{Fs, FsAdvice, Number};
 use crate::utils::*;
-use crate::byteoptable::FpRepr;
+use crate::byteoptable::{FpRepr};
+use crate::shortmult::{ShortMultChip, ShortMult};
 use ff::PrimeFieldBits;
 
 trait FMult <F: FieldExt + PrimeFieldBits>: Chip<F> {
     fn mult (
         &self,
-        layouter: impl Layouter<F>,
+        layouter: &mut impl Layouter<F>,
         a: Fs<F>,
         b: Fs<F>,
     ) -> Result<Fs<F>, Error>;
@@ -22,6 +27,7 @@ trait FMult <F: FieldExt + PrimeFieldBits>: Chip<F> {
 
 struct FMultChip<F: FieldExt + PrimeFieldBits> {
     config: FMultConfig<F>,
+    shift_chip: ShortMultChip<F>,
     _marker: PhantomData<F>,
 }
 
@@ -35,9 +41,10 @@ struct FMultConfig<F: FieldExt + PrimeFieldBits> {
 }
 
 impl<F: FieldExt + PrimeFieldBits> FMultChip<F> {
-    fn construct(config: <Self as Chip<F>>::Config) -> Self {
+    fn construct(config: <Self as Chip<F>>::Config, shift_chip:ShortMultChip<F>) -> Self {
         Self {
             config,
+            shift_chip,
             _marker: PhantomData,
         }
     }
@@ -124,6 +131,37 @@ impl<F: FieldExt + PrimeFieldBits> FMultChip<F> {
             ssel,
         }
     }
+
+    fn assign_fs(&self,
+        region: &mut Region<F>,
+        a: FsAdvice<F>,
+        o: [F;3],
+        row_offset:usize,
+        hint:&str) -> Fs<F> {
+        let cell0 = region.assign_advice(
+            || format!("{}_{}", hint, 0),
+            a.advices[0],
+            row_offset,
+            || Ok(o[0]),
+        ).unwrap();
+        let cell1 = region.assign_advice(
+            || format!("{}_{}", hint, 1),
+            a.advices[1],
+            row_offset,
+            || Ok(o[1]),
+        ).unwrap();
+        let cell2 = region.assign_advice(
+            || format!("{}_{}", hint, 2),
+            a.advices[2],
+            row_offset,
+            || Ok(o[2]),
+        ).unwrap();
+        Fs::<F> {values: [
+                Number::<F>{cell:cell0, value:Some(o[0])},
+                Number::<F>{cell:cell1, value:Some(o[1])},
+                Number::<F>{cell:cell2, value:Some(o[2])},
+        ]}
+    }
 }
 
 impl<F: FieldExt + PrimeFieldBits> Chip<F> for FMultChip<F> {
@@ -142,7 +180,7 @@ impl<F: FieldExt + PrimeFieldBits> Chip<F> for FMultChip<F> {
 impl<F: FieldExt + PrimeFieldBits> FMult<F> for FMultChip<F> {
     fn mult(
         &self,
-        mut layouter: impl Layouter<F>,
+        layouter: &mut impl Layouter<F>,
         a: Fs<F>,
         b: Fs<F>,
     ) -> Result<Fs<F>, Error> {
@@ -166,7 +204,6 @@ impl<F: FieldExt + PrimeFieldBits> FMult<F> for FMultChip<F> {
                  + xm.clone()*ym.clone()*shift_160
                  + (xl*ym + xm * yl)*shift_80;
 
-        // Keep little end
         // can skip Fr to Fp since it does not overflow
         let ch_repr = FpRepr::<F>{value:ch};
         let ch_s = [ch_repr.proj::<F>(0), F::zero(), F::zero()];
@@ -177,27 +214,48 @@ impl<F: FieldExt + PrimeFieldBits> FMult<F> for FMultChip<F> {
                  ch_s[1] + cm_s[1] + cl_s[1],
                  ch_s[2] + cm_s[2] + cl_s[2]];
 
+        let mut cl_num = None;
+        let mut cm_num = None;
+        let mut ch_num = None;
+
+        let mut cl_repr = None;
+        let mut cm_repr = None;
+        let mut ch_repr = None;
+
         layouter.assign_region(
             || "load private",
             |mut region| {
-                region.assign_advice(
+                let cl_cell = region.assign_advice(
                     || format!("c_{}", 0),
                     config.x.advices[0],
                     1,
                     || Ok(cl),
                 )?;
-                region.assign_advice(
+                cl_num = Some (Number::<F> {cell: cl_cell, value:Some(cl)});
+                let cm_cell = region.assign_advice(
                     || format!("c_{}", 1),
                     config.x.advices[1],
                     1,
                     || Ok(cm),
                 )?;
-                region.assign_advice(
+                cm_num = Some (Number::<F> {cell: cm_cell, value:Some(cm)});
+                let ch_cell = region.assign_advice(
                     || format!("c_{}", 2),
                     config.x.advices[2],
                     1,
                     || Ok(ch),
                 )?;
+                ch_num = Some (Number::<F> {cell: ch_cell, value:Some(ch)});
+
+                // Bind ch,cm,cl with there shifted results
+                cl_repr = Some (self.assign_fs(&mut region, config.x.clone(),
+                    cl_s, 2, "cl"));
+                cm_repr = Some (self.assign_fs(&mut region, config.y.clone(),
+                    cm_s, 2, "cm"));
+                ch_repr = Some (self.assign_fs(&mut region, config.x.clone(),
+                    ch_s, 3, "ch"));
+
+
                 for i in 0..2 {
                     region.assign_advice(
                         || format!("x_{}", i),
@@ -205,19 +263,6 @@ impl<F: FieldExt + PrimeFieldBits> FMult<F> for FMultChip<F> {
                         0,
                         || Ok(a.values[i].value.unwrap()),
                     )?;
-                    region.assign_advice(
-                        || format!("cl_{}", i),
-                        config.x.advices[i],
-                        2,
-                        || Ok(cl_s[i]),
-                    )?;
-                    region.assign_advice(
-                        || format!("ch_{}", i),
-                        config.x.advices[i],
-                        3,
-                        || Ok(ch_s[i]),
-                    )?;
-
                 }
                 for i in 0..2 {
                     region.assign_advice(
@@ -225,12 +270,6 @@ impl<F: FieldExt + PrimeFieldBits> FMult<F> for FMultChip<F> {
                         config.x.advices[i],
                         0,
                         || Ok(b.values[i].value.unwrap()),
-                    )?;
-                    region.assign_advice(
-                        || format!("cm_{}", i),
-                        config.y.advices[i],
-                        2,
-                        || Ok(cm_s[i]),
                     )?;
                 }
                 let cell0 = region.assign_advice(
@@ -258,6 +297,19 @@ impl<F: FieldExt + PrimeFieldBits> FMult<F> for FMultChip<F> {
                       ]});
                 Ok(())
             },
+        );
+        // FIXME: the last argument is the shift starting index ?
+        self.shift_chip.constrain(layouter,
+            cm_num.unwrap(),
+            cm_repr.unwrap(),
+            (96 + 80)/8 + 1,
+            F::from(0),
+        );
+        self.shift_chip.constrain(layouter,
+            ch_num.unwrap(),
+            ch_repr.unwrap(),
+            (96 + 96)/8 + 1,
+            F::from((320 - 240)/8),
         );
         Ok(out.unwrap())
     }

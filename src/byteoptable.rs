@@ -11,7 +11,7 @@ use num_bigint::BigUint;
 use std::convert::TryInto;
 use std::marker::PhantomData;
 
-trait ByteOp<F: FieldExt> {
+pub trait ByteOp<F: FieldExt> {
     fn bop(op1: usize, op2: usize) -> F;
 }
 
@@ -57,7 +57,7 @@ impl<Fp: FieldExt> FpRepr<Fp> {
     }
 }
 
-struct ByteOpChip<Fr: FieldExt, Fp: FieldExt, B: ByteOp<Fp>> {
+pub struct ByteOpChip<Fr: FieldExt, Fp: FieldExt, B: ByteOp<Fp>> {
     config: ByteOpChipConfig,
     _marker_fr: PhantomData<Fr>,
     _marker_fp: PhantomData<Fp>,
@@ -65,7 +65,7 @@ struct ByteOpChip<Fr: FieldExt, Fp: FieldExt, B: ByteOp<Fp>> {
 }
 
 #[derive(Clone, Debug)]
-struct ByteOpChipConfig {
+pub struct ByteOpChipConfig {
     l_col: Column<Advice>,
     r_col: Column<Advice>,
     o_col: Column<Advice>,
@@ -244,7 +244,7 @@ const L_RANGE: usize = 1 << CHUNCK_BITS;
 const R_RANGE: usize = 256 * 2 / CHUNCK_BITS;
 const S_RANGE: usize = 3;
 
-struct ShiftOp {
+pub struct ShiftOp {
     m: PhantomData<()>,
 }
 
@@ -263,6 +263,9 @@ impl ByteOp<Fq> for ShiftOp {
         return acc;
     }
 }
+
+
+pub type ShiftOpChip<Fp> = ByteOpChip::<Fp, Fq, ShiftOp>;
 
 impl Circuit<Fp> for ByteOpCircuit {
     type Config = ByteOpChipConfig;
@@ -290,7 +293,7 @@ impl Circuit<Fp> for ByteOpCircuit {
 
 #[test]
 fn circuit() {
-    use dev::{MockProver, VerifyFailure};
+    use halo2::dev::{MockProver, VerifyFailure};
 
     // The number of rows used in the constraint system matrix.
     const N_ROWS_USED: u32 = 256;
