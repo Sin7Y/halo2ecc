@@ -46,7 +46,7 @@ pub fn to_expr<F:FieldExt>(x:u64) ->Expression<F> {
     Expression::Constant(F::from_u64(x))
 }
 
-pub fn get_shift_lookup<F:FieldExt>(x: F, shift: F) -> F {
+pub fn get_shift_lookup<F:FieldExt>(x: F, shift: F, i: usize) -> F {
     F::zero()
 }
 
