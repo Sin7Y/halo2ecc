@@ -9,6 +9,7 @@ use halo2::circuit::{Chip, Layouter, SimpleFloorPlanner};
 
 use std::marker::PhantomData;
 
+use crate::types::Number;
 use crate::utils::projF;
 
 pub trait ByteOp<F: FieldExt> {
@@ -29,10 +30,10 @@ pub struct ByteOpChipConfig {
     o_col: Column<Advice>,
     s_col: Column<Advice>,
 
-    tbl_l: TableColumn,
-    tbl_r: TableColumn,
-    tbl_o: TableColumn,
-    tbl_s: TableColumn,
+    pub tbl_l: TableColumn,
+    pub tbl_r: TableColumn,
+    pub tbl_o: TableColumn,
+    pub tbl_s: TableColumn,
 }
 
 impl<Fr: FieldExt, Fp: FieldExt, B: ByteOp<Fp>> Chip<Fr> for ByteOpChip<Fr, Fp, B> {
@@ -49,7 +50,7 @@ impl<Fr: FieldExt, Fp: FieldExt, B: ByteOp<Fp>> Chip<Fr> for ByteOpChip<Fr, Fp, 
 }
 
 impl<Fr: FieldExt, Fp: FieldExt, B: ByteOp<Fp>> ByteOpChip<Fr, Fp, B> {
-    fn new(config: ByteOpChipConfig) -> Self {
+    pub fn construct(config: ByteOpChipConfig) -> Self {
         ByteOpChip {
             config,
             _marker_fr: PhantomData,
@@ -58,11 +59,16 @@ impl<Fr: FieldExt, Fp: FieldExt, B: ByteOp<Fp>> ByteOpChip<Fr, Fp, B> {
         }
     }
 
-    fn configure(cs: &mut ConstraintSystem<Fr>) -> ByteOpChipConfig {
+    pub fn configure(cs: &mut ConstraintSystem<Fr>) -> ByteOpChipConfig {
         let l_col = cs.advice_column();
         let r_col = cs.advice_column();
         let o_col = cs.advice_column();
         let s_col = cs.advice_column();
+
+        cs.enable_equality(l_col.into());
+        cs.enable_equality(r_col.into());
+        cs.enable_equality(o_col.into());
+        cs.enable_equality(s_col.into());
 
         let tbl_l = cs.lookup_table_column();
         let tbl_r = cs.lookup_table_column();
@@ -94,9 +100,9 @@ impl<Fr: FieldExt, Fp: FieldExt, B: ByteOp<Fp>> ByteOpChip<Fr, Fp, B> {
         }
     }
 
-    fn alloc_table(
+    pub fn alloc_table(
         &self,
-        layouter: &mut impl Layouter<Fr>,
+        mut layouter: impl Layouter<Fr>,
         lrange: usize,
         rrange: usize,
         srange: usize,
@@ -145,41 +151,47 @@ impl<Fr: FieldExt, Fp: FieldExt, B: ByteOp<Fp>> ByteOpChip<Fr, Fp, B> {
         )
     }
 
-    fn alloc_private_and_public_inputs(
+    fn constrain(
         &self,
         layouter: &mut impl Layouter<Fr>,
-        ol: Option<Fr>,
-        or: Option<Fr>,
-        os: Option<Fr>,
-        oo: Option<Fr>,
+        ol: Number<Fr>,
+        or: Number<Fr>,
+        os: Number<Fr>,
+        oo: Number<Fr>,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "private and public inputs",
             |mut region| {
-                region.assign_advice(
+                let l = region.assign_advice(
                     || "private input `l`",
                     self.config.l_col,
                     0,
-                    || ol.ok_or(Error::SynthesisError),
+                    || ol.value.ok_or(Error::SynthesisError),
                 )?;
-                region.assign_advice(
+                let r = region.assign_advice(
                     || "private input `r`",
                     self.config.r_col,
                     0,
-                    || or.ok_or(Error::SynthesisError),
+                    || or.value.ok_or(Error::SynthesisError),
                 )?;
-                region.assign_advice(
+                let s = region.assign_advice(
                     || "private input `s`",
                     self.config.s_col,
                     0,
-                    || os.ok_or(Error::SynthesisError),
+                    || os.value.ok_or(Error::SynthesisError),
                 )?;
-                region.assign_advice(
+                let o = region.assign_advice(
                     || "private input `v`",
                     self.config.o_col,
                     0,
-                    || oo.ok_or(Error::SynthesisError),
+                    || oo.value.ok_or(Error::SynthesisError),
                 )?;
+                region.constrain_equal(ol.cell, l)?;
+                println!("{:?}", ol.cell);
+                println!("{:?}", l);
+                //region.constrain_equal(or.cell, r)?;
+                //region.constrain_equal(os.cell, s)?;
+                //region.constrain_equal(oo.cell, o)?;
                 Ok(())
             },
         )
@@ -222,11 +234,18 @@ impl ByteOp<Fq> for ShiftOp {
     }
 }
 
+pub type ShiftOpChip<Fp> = ByteOpChip<Fp, Fq, ShiftOp>;
 
-pub type ShiftOpChip<Fp> = ByteOpChip::<Fp, Fq, ShiftOp>;
+use crate::testchip::*;
+
+#[derive(Clone, Debug)]
+pub struct CircuitConfig {
+    bopc: ByteOpChipConfig,
+    testc: TestConfig,
+}
 
 impl Circuit<Fp> for ByteOpCircuit {
-    type Config = ByteOpChipConfig;
+    type Config = CircuitConfig;
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
@@ -234,7 +253,9 @@ impl Circuit<Fp> for ByteOpCircuit {
     }
 
     fn configure(cs: &mut ConstraintSystem<Fp>) -> Self::Config {
-        ByteOpChip::<Fp, Fq, ShiftOp>::configure(cs)
+        let bopc = ByteOpChip::<Fp, Fq, ShiftOp>::configure(cs);
+        let testc = TestChip::configure(cs);
+        return CircuitConfig { bopc, testc };
     }
 
     fn synthesize(
@@ -242,88 +263,49 @@ impl Circuit<Fp> for ByteOpCircuit {
         config: Self::Config,
         mut layouter: impl Layouter<Fp>,
     ) -> Result<(), Error> {
-        let op_chip = ByteOpChip::<Fp, Fq, ShiftOp>::new(config);
-        op_chip.alloc_table(&mut layouter, L_RANGE, R_RANGE, S_RANGE)?;
-        op_chip.alloc_private_and_public_inputs(&mut layouter, self.l, self.r, self.s, self.o)?;
+        let test_chip = TestChip::construct(config.testc);
+        let l = test_chip.load_private(layouter.namespace(|| "load l"), self.l)?;
+        let r = test_chip.load_private(layouter.namespace(|| "load r"), self.r)?;
+        let s = test_chip.load_private(layouter.namespace(|| "load s"), self.s)?;
+        let o = test_chip.load_private(layouter.namespace(|| "load o"), self.o)?;
+
+        let op_chip = ByteOpChip::<Fp, Fq, ShiftOp>::construct(config.bopc);
+        op_chip.alloc_table(layouter.namespace(|| "shift tbl"), L_RANGE, R_RANGE, S_RANGE)?;
+        op_chip.constrain(&mut layouter, l, r, s, o)?;
         Ok(())
     }
 }
 
 #[test]
-fn circuit() {
-    use halo2::dev::{MockProver, VerifyFailure};
+fn circuit1() {
+    use halo2::dev::{MockProver};
 
-    // The number of rows used in the constraint system matrix.
-    const N_ROWS_USED: u32 = 256;
-
-    // The row index for the public input.
-    const PUB_INPUT_ROW: usize = 0;
-
-    // The verifier's public input.
-    const PUB_INPUT: u64 = 3;
-
-    // The actual number of rows in the constraint system is `2^k` where `N_ROWS_USED <= 2^k`.
-    let k = (N_ROWS_USED as f32).log2().ceil() as u32;
-    println!("k is {}", k);
-
-    let mut pub_inputs = vec![Fp::zero()];
-    pub_inputs[PUB_INPUT_ROW] = Fp::from(PUB_INPUT);
-
-    /*
     let circuit = ByteOpCircuit {
-        l: Some(Fp::from(123)),
-        r: Some(Fp::from(10)),
+        l: Some(Fp::from(255)),
+        r: Some(Fp::from(59)),
         s: Some(Fp::from(1)),
-        o: Some(Fp::from_u128(709746996383430097242516u128)),
+        o: Some(Fp::from_u128(204053304434175565874536u128)),
     };
-    */
-
-        let circuit = ByteOpCircuit {
-            l: Some(Fp::from(255)),
-            r: Some(Fp::from(59)),
-            s: Some(Fp::from(1)),
-            o: Some(Fp::from_u128(204053304434175565874536u128)),
-        };
-    let prover = MockProver::run(17, &circuit, vec![]).unwrap();
+    let ret = vec![Fp::from_u128(204053304434175565874536u128)];
+    let prover = MockProver::run(17, &circuit, vec![ret]).unwrap();
     let presult = prover.verify();
-    println!("Error {:?}", presult);
 
     assert!(presult.is_ok());
+}
 
-    // Assert that the public input gate is unsatisfied when `c != PUB_INPUT` (but when the lookup
-    // passes).
-    /*
-    let bad_circuit = ByteOpCircuit {
-        a: Some(Fp::from(2)),
-        b: Some(Fp::from(3)),
-        c: Some(Fp::from(2)),
-    };
-    let prover = MockProver::run(k, &bad_circuit, vec![pub_inputs.clone()]).unwrap();
-    match prover.verify() {
-        Err(errors) => {
-            assert_eq!(errors.len(), 1, "expected one verification error, found: {:?}", errors);
-            match &errors[0] {
-                VerifyFailure::Gate { .. } => {}
-                e => panic!("expected 'public input' gate error, found: {:?}", e),
-            };
-        }
-        _ => panic!("expected `prover.verify()` to fail"),
-    };
+#[test]
+fn circuit2() {
+    use halo2::dev::{MockProver};
 
-    // Assert that the lookup fails when `(a, b, c)` is not a row in the table; the lookup table is
-    // for 2-bit BYTE, using a 3-bit BYTE input `a = 4` should result in a lookup failure.
-    let mut bad_circuit = circuit.clone();
-    bad_circuit.a = Some(Fp::from(4));
-    let prover = MockProver::run(k, &bad_circuit, vec![pub_inputs]).unwrap();
-    match prover.verify() {
-        Err(errors) => {
-            assert_eq!(errors.len(), 1, "expected one verification error");
-            match &errors[0] {
-                VerifyFailure::Lookup { .. } => {}
-                e => panic!("expected lookup error, found: {:?}", e),
-            };
-        }
-        _ => panic!("expected `prover.verify()` to fail"),
+    let circuit = ByteOpCircuit {
+        l: Some(Fp::from(0)),
+        r: Some(Fp::from(0)),
+        s: Some(Fp::from(0)),
+        o: Some(Fp::from_u128(0)),
     };
-    */
+    let ret = vec![Fp::from_u128(0)];
+    let prover = MockProver::run(17, &circuit, vec![ret]).unwrap();
+    let presult = prover.verify();
+
+    assert!(presult.is_ok());
 }
