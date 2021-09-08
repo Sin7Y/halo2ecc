@@ -7,54 +7,12 @@ use halo2::{
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::{Chip, Layouter, SimpleFloorPlanner};
 
-use num_bigint::BigUint;
-use std::convert::TryInto;
 use std::marker::PhantomData;
+
+use crate::utils::projF;
 
 pub trait ByteOp<F: FieldExt> {
     fn bop(op1: usize, op2: usize) -> F;
-}
-
-pub struct FpRepr<Fp: FieldExt> {
-    pub value: Fp,
-}
-
-impl<Fp: FieldExt> FpRepr<Fp> {
-    pub fn proj<Fr: FieldExt>(&self, i: usize) -> Fr {
-        if i > 2 {
-            return Fr::from(0);
-        } else if i == 2 {
-            return Fr::from_bytes(
-                &[&self.value.to_bytes()[20..32], &[0u8; 20][..]]
-                    .concat()
-                    .try_into()
-                    .unwrap(),
-            )
-            .unwrap();
-        } else if i == 1 {
-            return Fr::from_bytes(
-                &[&self.value.to_bytes()[10..20], &[0u8; 22][..]]
-                    .concat()
-                    .try_into()
-                    .unwrap(),
-            )
-            .unwrap();
-        } else {
-            return Fr::from_bytes(
-                &[&self.value.to_bytes()[0..10], &[0u8; 22][..]]
-                    .concat()
-                    .try_into()
-                    .unwrap(),
-            )
-            .unwrap();
-        }
-    }
-
-    fn get_op_entry<B: ByteOp<Fp>>(x: usize, y: usize) -> FpRepr<Fp> {
-        FpRepr {
-            value: B::bop(x, y),
-        }
-    }
 }
 
 pub struct ByteOpChip<Fr: FieldExt, Fp: FieldExt, B: ByteOp<Fp>> {
@@ -150,14 +108,14 @@ impl<Fr: FieldExt, Fp: FieldExt, B: ByteOp<Fp>> ByteOpChip<Fr, Fp, B> {
                     for r in 0..rrange {
                         for s in 0..srange {
                             let offset = l * R_RANGE * S_RANGE + r * S_RANGE + s;
-                            let repr = FpRepr::<Fp>::get_op_entry::<B>(l, r);
+                            let v = B::bop(l, r);
                             //println!("l: {}, r: {} s:{} o:{:?}", l, r, s, repr.proj::<Fr>(s));
 
                             table.assign_cell(
                                 || "table_idx",
                                 self.config.tbl_o,
                                 offset,
-                                || Ok(repr.proj::<Fr>(s)),
+                                || Ok(projF::<Fp, Fr>(v, s)),
                             )?;
 
                             table.assign_cell(
