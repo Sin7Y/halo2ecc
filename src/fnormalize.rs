@@ -67,7 +67,7 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FNormChip<Fp, F> {
 
         let sel = meta.selector();
 
-        meta.create_gate("mult-split", |meta| {
+        meta.create_gate("fnorm", |meta| {
             let s = meta.query_selector(sel);
 
             // pure sum and carry arithment

@@ -146,7 +146,7 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FMultChip<Fp, F> {
                 .unwrap();
             cells[i] = Some(Number::<F> {
                 cell,
-                value: Some(o[0]),
+                value: Some(o[i]),
             });
         }
 
@@ -400,9 +400,9 @@ impl Circuit<Fp> for MyCircuit {
                 Number::<Fp>{cell:x2.cell, value:Some(self.inputs[2])},
             ]},
             Fs::<Fp> {values: [
-                Number::<Fp>{cell:y0.cell, value:Some(self.inputs[0])},
-                Number::<Fp>{cell:y1.cell, value:Some(self.inputs[1])},
-                Number::<Fp>{cell:y2.cell, value:Some(self.inputs[2])},
+                Number::<Fp>{cell:y0.cell, value:Some(self.inputs[3])},
+                Number::<Fp>{cell:y1.cell, value:Some(self.inputs[4])},
+                Number::<Fp>{cell:y2.cell, value:Some(self.inputs[5])},
             ]},
         )?;
 
