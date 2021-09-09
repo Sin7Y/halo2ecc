@@ -27,7 +27,7 @@ pub struct DecomposeConfig<F: FieldExt + PrimeFieldBits> {
     _marker: PhantomData<F>,
 }
 
-struct DecomposeChip<F: FieldExt + PrimeFieldBits> {
+pub struct DecomposeChip<F: FieldExt + PrimeFieldBits> {
     config: DecomposeConfig<F>,
 }
 
@@ -120,7 +120,7 @@ impl<F: FieldExt + PrimeFieldBits> DecomposeChip<F> {
         Ok(())
     }
 
-    fn decompose(
+    pub fn decompose(
         &self,
         layouter: &mut impl Layouter<F>,
         input: Number<F>,

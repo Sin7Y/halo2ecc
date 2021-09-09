@@ -21,22 +21,10 @@ pub fn pow2<F: FieldExt>(y: u64) -> F {
 pub fn decompose_eight_bits<F:PrimeFieldBits> (v: F, num_chunks:usize) -> Vec<u64>{
     let bits: Vec<bool> = v.to_le_bits()
         .into_iter()
-        .take(num_chunks)
+        .take(num_chunks * 8)
         .collect();
     bits.chunks_exact(8)
         .map(|chunk| chunk.iter().rev().fold(0, |acc, b| (acc << 1) + (*b as u64)))
-        .collect()
-}
-
-pub fn decompose_tweleve_bits<F: PrimeFieldBits>(v: F, num_chunks: usize) -> Vec<u64> {
-    let bits: Vec<bool> = v.to_le_bits().into_iter().take(num_chunks * 12).collect();
-    bits.chunks_exact(12)
-        .map(|chunk| {
-            chunk
-                .iter()
-                .rev()
-                .fold(0, |acc, b| (acc << 1) + (*b as u64))
-        })
         .collect()
 }
 
