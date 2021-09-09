@@ -237,7 +237,7 @@ impl Circuit<Fp> for MyCircuit {
 
         chip.load_range_table(&mut layouter)?;
         println!("assign region ...");
-        let (sum, carry) = chip.decompose(&mut layouter, input_cell.clone(), 10)?;
+        let (sum, carry) = chip.decompose(&mut layouter, input_cell.clone(), 2)?;
         test_chip.expose_public(layouter.namespace(|| "out"), sum, 0)?;
         test_chip.expose_public(layouter.namespace(|| "out"), carry, 1)?;
         Ok(())
@@ -250,10 +250,10 @@ fn check() {
     // The number of rows used in the constraint system matrix.
     const PUB_INPUT: u64 = 3;
 
-    let pub_inputs = vec![Fp::from(257), Fp::from(0)];
+    let pub_inputs = vec![Fp::from(0x3456), Fp::from(0x12)];
 
     let circuit = MyCircuit {
-        input: Fp::from(257)
+        input: Fp::from(0x123456)
     };
     let prover = MockProver::run(9, &circuit, vec![pub_inputs]).unwrap();
     let presult = prover.verify();
