@@ -122,7 +122,7 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FMultChip<Fp, F> {
                     * (zl
                         - (xl.clone() * yl.clone()
                             + (xm.clone() * yl.clone() + xl.clone() * ym.clone()) * shift_80
-                            + xm.clone() * ym.clone() * shift_160)),
+                            + (xm.clone() * ym.clone() + xh.clone() * yl.clone() + xl.clone() * yh.clone()) * shift_160)),
                 s.clone() * (zm - (xm.clone() * yh.clone() + xh.clone() * ym.clone())),
                 s.clone() * (zh - (xh.clone() * yh.clone())),
             ]
@@ -255,7 +255,8 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FMultChip<Fp, F> {
                 let zh = xh.clone() * yh.clone();
                 let zm = xh * ym.clone() + xm.clone() * yh;
                 let zl = xl.clone() * yl.clone()
-                    + xm.clone() * ym.clone() * shift_160
+                    + (xh.clone() * yl.clone() + xm.clone() * ym.clone() + xl.clone() * yh.clone())
+                        * shift_160
                     + (xl * ym + xm * yl) * shift_80;
 
                 let _ = self.assign_fs(&mut region, config.x, [xl, xm, xh], 0, "fmult-x");
@@ -289,7 +290,7 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FMult<Fp, F> for FMultChip<Fp, 
             layouter,
             l1output.values[1],
             Fs { values: [l, m, h] },
-            10,
+            32,
             0,
         )?;
 
@@ -297,6 +298,8 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FMult<Fp, F> for FMultChip<Fp, 
 
         let rem = self.plus_chip.plus(layouter, rem, l1output.values[2])?;
         let (l3output, rem) = self.smult_chip.constrain(layouter, rem, l2output, 24, 10)?;
+
+        println!("rem {:?}", rem);
 
         println!("l3output = {:?}", l3output);
 
@@ -503,9 +506,9 @@ fn test1() {
     let circuit = MyCircuit { inputs };
 
     let mut public_inputs = vec![
-        Fp::from_u128(1208261736827975630848001),
-        Fp::from_u128(789082597058608776347651),
-        Fp::from_u128(14507109835375529394601112),
+        Fp::from_u128(0x00000000000000000000000000000000000000000000a8b98c46eb2100000002),
+        Fp::from_u128(0x00000000000000000000000000000000000000000000a71840d8684d88580998),
+        Fp::from_u128(0x0000000000000000000000000000000000000000400bfffffffffffb2e127c98),
     ];
 
     let prover = MockProver::run(k, &circuit, vec![public_inputs.clone()]).unwrap();
