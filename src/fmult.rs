@@ -1,13 +1,14 @@
 use halo2::{
     arithmetic::FieldExt,
     circuit::{Cell, Chip, Layouter, Region},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Instance, Selector},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Instance, Selector},
     poly::Rotation,
 };
 
 use crate::decompose::{DecomposeChip, DecomposeConfig};
 use crate::plus::{PlusChip, Plus};
 use crate::shortmult::{ShortMult, ShortMultChip};
+use crate::fnormalize::{FNorm, FNormChip};
 use crate::types::{Fs, FsAdvice, Number};
 use crate::utils::*;
 use ff::PrimeFieldBits;
@@ -22,6 +23,7 @@ struct FMultChip<Fp: FieldExt, F: FieldExt + PrimeFieldBits> {
     smult_chip: ShortMultChip<Fp, F>,
     decom_chip: DecomposeChip<F>,
     plus_chip: PlusChip<F>,
+    fnorm_chip: FNormChip<Fp, F>,
     _marker: PhantomData<F>,
 }
 
@@ -31,6 +33,9 @@ struct FMultConfig<F: FieldExt + PrimeFieldBits> {
     x: FsAdvice<F>,
     y: FsAdvice<F>,
     z: FsAdvice<F>,
+    
+    advice: Column<Advice>,
+    constant: Column<Fixed>,
 }
 
 impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FMultChip<Fp, F> {
@@ -39,17 +44,25 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FMultChip<Fp, F> {
         smult_chip: ShortMultChip<Fp, F>,
         decom_chip: DecomposeChip<F>,
         plus_chip: PlusChip<F>,
+        fnorm_chip: FNormChip<Fp, F>,
     ) -> Self {
         Self {
             config,
             smult_chip,
             decom_chip,
             plus_chip,
+            fnorm_chip,
             _marker: PhantomData,
         }
     }
 
-    fn create_base_gate(meta: &mut ConstraintSystem<F>) -> FMultConfig<F> {
+    fn configure(meta: &mut ConstraintSystem<F>) -> FMultConfig<F> {
+        let advice = meta.advice_column();
+        meta.enable_equality(advice.into());
+
+        let constant = meta.fixed_column();
+        meta.enable_constant(constant);
+
         let x = FsAdvice::<F> {
             advices: [
                 meta.advice_column(),
@@ -109,7 +122,7 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FMultChip<Fp, F> {
             ]
         });
 
-        return FMultConfig { x, y, z };
+        return FMultConfig { x, y, z, advice, constant };
     }
 
     fn assign_fs(
@@ -157,6 +170,57 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> Chip<F> for FMultChip<Fp, F> {
 }
 
 impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FMultChip<Fp, F> {
+    fn check_constant(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        input: Number<F>,
+        constant: F
+    ) -> Result<(), Error> {
+        let config = self.config();
+
+        layouter.assign_region(
+            || "load constant",
+            |mut region| {
+                let _cell = region.assign_advice_from_constant(
+                    || "check constant value",
+                    config.advice,
+                    0,
+                    constant,
+                )?;
+                region.constrain_equal(input.cell, _cell);
+                Ok(())
+            },
+        )?;
+
+        Ok(())
+    }
+
+    fn load_constant(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        constant: F,
+    ) -> Result<Number<F>, Error> {
+        let config = self.config();
+
+        let mut num = None;
+        layouter.assign_region(
+            || "load constant",
+            |mut region| {
+                let cell = region.assign_advice_from_constant(
+                    || "load constant value",
+                    config.advice,
+                    0,
+                    constant,
+                )?;
+                num = Some(Number {
+                    cell,
+                    value: Some(constant),
+                });
+                Ok(())
+            },
+        )?;
+        Ok(num.unwrap())
+    }
     fn l1mult(&self, layouter: &mut impl Layouter<F>, a: Fs<F>, b: Fs<F>) -> Result<Fs<F>, Error> {
         let config = self.config();
         let mut output = None;
@@ -220,8 +284,27 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FMult<Fp, F> for FMultChip<Fp, 
             10,
         )?;
 
-        // TODO: please apply normalize on l3output
+        self.check_constant(layouter, rem, F::zero())?;
+        
+        let zero_cell = self.load_constant(layouter, F::zero())?;
+        let (l4output, carry) = self.fnorm_chip.normalize(layouter, l3output, Fs{values: [zero_cell, zero_cell, zero_cell]})?;
 
-        Ok(l1output)
+        // round 1
+        let (l4output, res) = self.smult_chip.constrain(layouter, carry, l4output, 1, 2)?;
+        let (l4output, carry) = self.fnorm_chip.normalize(layouter, l4output, Fs{values: [zero_cell, zero_cell, zero_cell]})?;
+        self.check_constant(layouter, res, F::zero())?;
+
+        // round 2
+        let (l4output, res) = self.smult_chip.constrain(layouter, carry, l4output, 1, 2)?;
+        let (l4output, carry) = self.fnorm_chip.normalize(layouter, l4output, Fs{values: [zero_cell, zero_cell, zero_cell]})?;
+        self.check_constant(layouter, res, F::zero())?;
+
+        // round 3
+        let (l4output, res) = self.smult_chip.constrain(layouter, carry, l4output, 1, 2)?;
+        let (l4output, carry) = self.fnorm_chip.normalize(layouter, l4output, Fs{values: [zero_cell, zero_cell, zero_cell]})?;
+        self.check_constant(layouter, res, F::zero())?;
+        self.check_constant(layouter, carry, F::zero())?;
+
+        Ok(l4output)
     }
 }

@@ -15,7 +15,7 @@ use crate::utils::*;
 use crate::decompose::{DecomposeChip};
 use ff::PrimeFieldBits;
 
-trait FNorm <Fp: FieldExt, F: FieldExt + PrimeFieldBits>: Chip<F> {
+pub trait FNorm <Fp: FieldExt, F: FieldExt + PrimeFieldBits>: Chip<F> {
     fn normalize (
         &self,
         layouter: &mut impl Layouter<F>,
@@ -24,14 +24,14 @@ trait FNorm <Fp: FieldExt, F: FieldExt + PrimeFieldBits>: Chip<F> {
     ) -> Result<(Fs<F>, Number<F>), Error>;
 }
 
-struct FNormChip<Fp: FieldExt, F: FieldExt + PrimeFieldBits> {
+pub struct FNormChip<Fp: FieldExt, F: FieldExt + PrimeFieldBits> {
     config: FNormConfig,
     decompose_chip: DecomposeChip<F>,
     _marker: PhantomData<Fp>,
 }
 
 #[derive(Clone, Debug)]
-struct FNormConfig {
+pub struct FNormConfig {
     /// Two fp numbers, three Columns each
     op1: Column<Advice>,
     op2: Column<Advice>,
@@ -304,7 +304,7 @@ impl Circuit<Fp> for MyCircuit {
                 Number::<Fp>{cell:c2.cell, value:Some(self.x2)},
         ]};
         let dchip = DecomposeChip::<Fp>::constructor(config.dconfig);
-        dchip.load_range_table(&mut layouter);
+        dchip.load_range_table(&mut layouter)?;
         let chip = FNormChip::<Fq, Fp>::construct(config.nconfig, dchip);
 
         println!("assign region ...");
