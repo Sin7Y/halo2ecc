@@ -621,3 +621,36 @@ fn fmult_test3() {
     let prover = MockProver::run(k, &circuit, vec![public_inputs]).unwrap();
     assert!(prover.verify().is_err());
 }
+
+#[test]
+fn test3() {
+    use halo2::{dev::MockProver, pasta::Fp};
+    let k = 17;
+
+    // let input = Some(Fp::from(400)); // 256 + 144
+    let inputs = [
+        Fp::from(0),
+        Fp::from(0),
+        Fp::from(3),
+        Fp::from(0),
+        Fp::from(0),
+        Fp::from(3),
+    ];
+
+    let circuit = MyCircuit { inputs };
+
+    let mut public_inputs = vec![
+        Fp::from_u128(796780324800677309054977),
+        Fp::from_u128(789082597096295386057108),
+        Fp::from_u128(0x3ffffffffffffffb2e127c8e),
+    ];
+
+    let prover = MockProver::run(k, &circuit, vec![public_inputs.clone()]).unwrap();
+    assert_eq!(prover.verify(), Ok(()));
+
+    public_inputs[0] += Fp::one();
+    let prover = MockProver::run(k, &circuit, vec![public_inputs]).unwrap();
+    assert!(prover.verify().is_err());
+}
+
+
