@@ -36,6 +36,7 @@ pub trait ShortMult<F: FieldExt + PrimeFieldBits>: Chip<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         a: Number<F>,
+        base_sum: Fs<F>,
         num_chunks: usize,
         shift_base: u64,
     ) -> Result<(Fs<F>, Number<F>), Error>;
@@ -178,6 +179,7 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> ShortMultChip<Fp, F> {
         &self,
         layouter: &mut impl Layouter<F>,
         input: Number<F>,
+        base_sum: Fs<F>,
         num_chunks: usize,
         shift_base: u64,
     ) -> Result<(Fs<F>, Number<F>), Error> {
@@ -211,7 +213,11 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> ShortMultChip<Fp, F> {
                 // For c, rem, lookup, sum
                 let bytes = input.value.unwrap().to_bytes();
                 let mut c = input.clone().value.unwrap();
-                let mut sum = [F::zero(), F::zero(), F::zero()];
+                let mut sum = [
+                    base_sum.values[0].value.unwrap(),
+                    base_sum.values[1].value.unwrap(),
+                    base_sum.values[2].value.unwrap(),
+                ];
 
                 for row in 0..num_chunks {
                     let _rem = F::from_u64(bytes[row].into());
@@ -245,12 +251,16 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> ShortMultChip<Fp, F> {
                         )?;
 
                         println!("lookupi {} {} {:?}", row, i, lookupi);
-                        region.assign_advice(
+                        let sum_cell = region.assign_advice(
                             || format!("sum_{:?}_{:?}", i, row),
                             config.sum[i],
                             row,
                             || Ok(sum[i]),
                         )?;
+
+                        if row == 0 {
+                            region.constrain_equal(base_sum.values[i].cell, sum_cell)?;
+                        }
 
                         println!("sum {} {} {:?}", row, i, sum[i]);
                         sum[i] += lookupi;
@@ -320,10 +330,11 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> ShortMult<F> for ShortMultChip<
         &self,
         layouter: &mut impl Layouter<F>,
         a: Number<F>,
+        base_sum: Fs<F>,
         num_chunks: usize,
         shift_base: u64,
     ) -> Result<(Fs<F>, Number<F>), Error> {
-        self.assign_region(layouter, a, num_chunks, shift_base)
+        self.assign_region(layouter, a, base_sum, num_chunks, shift_base)
     }
 }
 
@@ -374,6 +385,8 @@ impl<F: FieldExt + PrimeFieldBits> Circuit<F> for MyCircuit<F> {
         let test_chip = TestChip::construct(config.testc);
         let input = test_chip.load_private(layouter.namespace(|| "load"), self.input)?;
 
+        let z = test_chip.load_constant(layouter.namespace(|| "load"), F::zero())?;
+
         let op_chip = ByteOpChip::<F, Fq, ShiftOp>::construct(config.bopc);
         op_chip.alloc_table(
             layouter.namespace(|| "shift tbl"),
@@ -383,8 +396,15 @@ impl<F: FieldExt + PrimeFieldBits> Circuit<F> for MyCircuit<F> {
         )?;
 
         let smult_chip = ShortMultChip::<Fq, F>::construct(config.smult);
-        let out = smult_chip.constrain(&mut layouter.namespace(|| "smult"), input, 10, 0)?;
-        println!("out is {:?}", out);
+        let out = smult_chip.constrain(
+            &mut layouter.namespace(|| "smult"),
+            input,
+            Fs {
+                values: [z, z, z],
+            },
+            10,
+            0,
+        )?;
         test_chip.expose_public(layouter.namespace(|| "out0"), out.0.values[0].clone(), 0)?;
         test_chip.expose_public(layouter.namespace(|| "out1"), out.0.values[1].clone(), 1)?;
         test_chip.expose_public(layouter.namespace(|| "out2"), out.0.values[2].clone(), 2)?;
@@ -408,7 +428,6 @@ fn main1() {
     let mut public_inputs = vec![
         Fp::from_u128(0),
         Fp::from_u128(0),
-        //    Fp::from_u128(483570327845851669882470400u128),
         Fp::from_u128(0),
         Fp::from_u128(0),
     ];

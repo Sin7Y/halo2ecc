@@ -9,7 +9,7 @@ use crate::types::Number;
 use ff::PrimeFieldBits;
 use std::marker::PhantomData;
 
-trait Plus<F: FieldExt + PrimeFieldBits>: Chip<F> {
+pub trait Plus<F: FieldExt + PrimeFieldBits>: Chip<F> {
   fn plus(
     &self,
     layouter: &mut impl Layouter<F>,
@@ -18,13 +18,13 @@ trait Plus<F: FieldExt + PrimeFieldBits>: Chip<F> {
   ) -> Result<Number<F>, Error>;
 }
 
-struct PlusChip<F: FieldExt + PrimeFieldBits> {
+pub struct PlusChip<F: FieldExt + PrimeFieldBits> {
   config: PlusConfig,
   _marker: PhantomData<F>,
 }
 
 #[derive(Clone, Debug)]
-struct PlusConfig {
+pub struct PlusConfig {
   x: Column<Advice>,
   y: Column<Advice>,
   z: Column<Advice>,

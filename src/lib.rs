@@ -8,4 +8,4 @@ mod fnormalize;
 mod fplus;
 mod fmult;
 mod byteoptable;
-
+mod plus;

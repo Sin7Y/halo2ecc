@@ -7,7 +7,7 @@ use halo2::{
 use std::marker::PhantomData;
 use ff::PrimeFieldBits;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Copy)]
 pub struct FsAdvice<F: FieldExt + PrimeFieldBits> {
     pub advices: [Column<Advice>; 3],
     pub _marker: PhantomData<F>,

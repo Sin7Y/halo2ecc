@@ -1,12 +1,12 @@
 extern crate halo2;
 
-use std::marker::PhantomData;
 use crate::types::Number;
+use std::marker::PhantomData;
 
 use halo2::{
     arithmetic::FieldExt,
     circuit::{Chip, Layouter, SimpleFloorPlanner},
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Instance},
+    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed, Instance},
 };
 
 pub struct TestChip<F: FieldExt> {
@@ -18,10 +18,12 @@ pub struct TestChip<F: FieldExt> {
 pub struct TestConfig {
     advice: Column<Advice>,
     instance: Column<Instance>,
+    constant: Column<Fixed>
 }
 
-pub trait TestChipTrait <F: FieldExt>: Chip<F> {
+pub trait TestChipTrait<F: FieldExt>: Chip<F> {
     fn load_private(&self, layouter: impl Layouter<F>, a: Option<F>) -> Result<Number<F>, Error>;
+    fn load_constant(&self, layouter: impl Layouter<F>, constant: F) -> Result<Number<F>, Error>;
     fn expose_public(
         &self,
         layouter: impl Layouter<F>,
@@ -29,7 +31,6 @@ pub trait TestChipTrait <F: FieldExt>: Chip<F> {
         row: usize,
     ) -> Result<(), Error>;
 }
-
 
 impl<F: FieldExt> TestChip<F> {
     pub fn construct(config: <Self as Chip<F>>::Config) -> Self {
@@ -41,17 +42,14 @@ impl<F: FieldExt> TestChip<F> {
 
     /// Only one row is used to store all the test inputs
 
-    pub fn configure(
-        meta: &mut ConstraintSystem<F>,
-    ) -> <Self as Chip<F>>::Config {
+    pub fn configure(meta: &mut ConstraintSystem<F>) -> <Self as Chip<F>>::Config {
         let advice = meta.advice_column();
         let instance = meta.instance_column();
+        let constant = meta.fixed_column();
         meta.enable_equality(instance.into());
         meta.enable_equality(advice.into());
-        TestConfig {
-            advice,
-            instance,
-        }
+        meta.enable_constant(constant);
+        TestConfig { advice, instance, constant }
     }
 }
 
@@ -69,7 +67,6 @@ impl<F: FieldExt> Chip<F> for TestChip<F> {
 }
 
 impl<F: FieldExt> TestChipTrait<F> for TestChip<F> {
-
     fn load_private(
         &self,
         mut layouter: impl Layouter<F>,
@@ -88,6 +85,33 @@ impl<F: FieldExt> TestChipTrait<F> for TestChip<F> {
                     || value.ok_or(Error::SynthesisError),
                 )?;
                 num = Some(Number { cell, value });
+                Ok(())
+            },
+        )?;
+        Ok(num.unwrap())
+    }
+
+    fn load_constant(
+        &self,
+        mut layouter: impl Layouter<F>,
+        constant: F,
+    ) -> Result<Number<F>, Error> {
+        let config = self.config();
+
+        let mut num = None;
+        layouter.assign_region(
+            || "load constant",
+            |mut region| {
+                let cell = region.assign_advice_from_constant(
+                    || "constant value",
+                    config.advice,
+                    0,
+                    constant,
+                )?;
+                num = Some(Number {
+                    cell,
+                    value: Some(constant),
+                });
                 Ok(())
             },
         )?;

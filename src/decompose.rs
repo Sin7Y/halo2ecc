@@ -150,12 +150,6 @@ impl<F: FieldExt + PrimeFieldBits> DecomposeChip<F> {
                             F::zero()
                         };
 
-                    println!("row: {:?}", row);
-                    println!("c: {:?}", c);
-                    println!("b: {:?}", b);
-                    println!("sum: {:?}", sum);
-                    println!("rem: {:?}", rem);
-
                     let c_cell =
                         region.assign_advice(|| format!("c_{:?}", 0), config.c, row, || Ok(c))?;
 
