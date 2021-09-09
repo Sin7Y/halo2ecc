@@ -177,7 +177,7 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FNorm<Fp, F> for FNormChip<Fp, 
                 )?;
                 region.constrain_equal(carry_l.cell, c);
 
-                let cell = Some(region.assign_advice(
+                cell = Some(region.assign_advice(
                    || format!("sum_{}", 1),
                    config.sum,
                    0,
@@ -242,9 +242,7 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FNorm<Fp, F> for FNormChip<Fp, 
             self.decompose_chip.decompose(layouter, Number::<F>{cell: cell.unwrap(), value: Some(vh) }, 16)?;
 
         out = Some (Fs::<F> {values: [sum_l, sum_m, sum_h]});
-        //out = Some (Fs::<F> {values: [sum_l.clone(), sum_l.clone(), sum_l]});
         Ok((out.unwrap(), carry_h))
-        //Ok((out.unwrap(), carry_l))
     }
 }
 
@@ -324,15 +322,15 @@ fn check() {
     use halo2::dev::MockProver;
     let pub_inputs = vec![
         Fp::from(0x2),
-        Fp::from(0x2),
-        Fp::from(0x2),
+        Fp::from(0x4),
+        Fp::from(0x6),
         Fp::from(0x0),
     ];
 
     let circuit = MyCircuit {
         x0: Fp::from(0x1),
-        x1: Fp::from(0x1),
-        x2: Fp::from(0x1),
+        x1: Fp::from(0x2),
+        x2: Fp::from(0x3),
         o0: Fp::from(0x2),
         o1: Fp::from(0x2),
         o2: Fp::from(0x2),
