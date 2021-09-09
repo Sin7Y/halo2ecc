@@ -129,7 +129,7 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FNorm<Fp, F> for FNormChip<Fp, 
         layouter.assign_region(
             || "load row0",
             |mut region| {
-                //config.sel.enable(&mut region, 0)?;
+                config.sel.enable(&mut region, 0)?;
                 region.assign_advice(
                     || format!("carry_{}", 0),
                     config.carry,
@@ -166,9 +166,9 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FNorm<Fp, F> for FNormChip<Fp, 
 
         let vm = xm + ym + carry_l.clone().value.unwrap();
         layouter.assign_region(
-            || "load row0",
+            || "load row1",
             |mut region| {
-                //config.sel.enable(&mut region, 1)?;
+                config.sel.enable(&mut region, 0)?;
                 let c = region.assign_advice(
                     || format!("carry_{}", 1),
                     config.carry,
@@ -185,14 +185,14 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FNorm<Fp, F> for FNormChip<Fp, 
                 )?);
 
                 region.assign_advice(
-                    || format!("op_{}", 1),
+                    || format!("op1_{}", 1),
                     config.op1,
                     0,
                     || Ok(x.clone().values[1].value.unwrap()),
                 )?;
 
                 region.assign_advice(
-                    || format!("op_{}", 1),
+                    || format!("op2_{}", 1),
                     config.op2,
                     0,
                     || Ok(y.clone().values[1].value.unwrap()),
@@ -206,9 +206,9 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FNorm<Fp, F> for FNormChip<Fp, 
 
         let vh = xh + yh + carry_m.clone().value.unwrap();
         layouter.assign_region(
-            || "load row0",
+            || "load row2",
             |mut region| {
-                //config.sel.enable(&mut region, 2)?;
+                config.sel.enable(&mut region, 0)?;
                 region.assign_advice(
                     || format!("carry_{}", 2),
                     config.carry,
@@ -219,7 +219,7 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FNorm<Fp, F> for FNormChip<Fp, 
                 cell = Some (region.assign_advice(
                     || format!("sum_{}", 2),
                     config.sum,
-                    2,
+                    0,
                     || Ok(vh),
                 )?);
                 region.assign_advice(

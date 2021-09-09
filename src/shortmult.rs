@@ -3,7 +3,6 @@ extern crate halo2;
 use crate::types::{Fs, Number};
 use crate::utils::*;
 use ff::PrimeFieldBits;
-use std::convert::TryFrom;
 use std::convert::TryInto;
 use std::marker::PhantomData;
 
