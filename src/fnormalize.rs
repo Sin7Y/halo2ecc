@@ -50,7 +50,7 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FNormChip<Fp, F> {
         }
     }
 
-    fn create_gate(
+    fn configure(
         meta: &mut ConstraintSystem<F>,
     ) -> <Self as Chip<F>>::Config {
         let op1 = meta.advice_column();
@@ -239,4 +239,95 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FNorm<Fp, F> for FNormChip<Fp, 
         out = Some (Fs::<F> {values: [sum_l, sum_m, sum_h]});
         Ok((out.unwrap(), carry_h))
     }
+}
+
+use halo2::pasta::{Fp, Fq};
+use crate::testchip::*;
+use crate::decompose::*;
+use halo2::plonk::Circuit;
+use halo2::circuit::SimpleFloorPlanner;
+
+#[derive(Clone, Default)]
+struct MyCircuit {
+    x0: Fp,
+    x1: Fp,
+    x2: Fp,
+    o0: Fp,
+    o1: Fp,
+    o2: Fp,
+    carry: Fp,
+}
+
+#[derive(Clone, Debug)]
+struct TestCircConfig {
+    nconfig: FNormConfig,
+    dconfig: DecomposeConfig<Fp>,
+    tconfig: TestConfig,
+}
+
+impl Circuit<Fp> for MyCircuit {
+    type Config = TestCircConfig;
+    type FloorPlanner = SimpleFloorPlanner;
+
+    fn without_witnesses(&self) -> Self {
+        Self::default()
+    }
+
+    fn configure(cs: &mut ConstraintSystem<Fp>) -> Self::Config {
+        let table_col = cs.lookup_table_column();
+        TestCircConfig {
+            nconfig: FNormChip::<Fq, Fp>::configure(cs),
+            dconfig: DecomposeChip::<Fp>::configure(cs, table_col),
+            tconfig: TestChip::<Fp>::configure(cs),
+        }
+    }
+
+    fn synthesize(
+        &self,
+        config: Self::Config,
+        mut layouter: impl Layouter<Fp>,
+    ) -> Result<(), Error> {
+        println!("Start synthesize ...");
+        let test_chip = TestChip::<Fp>::construct(config.tconfig);
+        let c0 = test_chip.load_private(layouter.namespace(|| "cell"), Some(self.x0))?;
+        let c1 = test_chip.load_private(layouter.namespace(|| "cell"), Some(self.x1))?;
+        let c2 = test_chip.load_private(layouter.namespace(|| "cell"), Some(self.x2))?;
+
+        let v = Fs::<Fp> {values: [
+                Number::<Fp>{cell:c0.cell, value:Some(self.x0)},
+                Number::<Fp>{cell:c1.cell, value:Some(self.x1)},
+                Number::<Fp>{cell:c2.cell, value:Some(self.x2)},
+        ]};
+        let dchip = DecomposeChip::<Fp>::constructor(config.dconfig);
+        let chip = FNormChip::<Fq, Fp>::construct(config.nconfig, dchip);
+
+        println!("assign region ...");
+        let (sum, carry) = chip.normalize(&mut layouter, v.clone(), v)?;
+        test_chip.expose_public(layouter.namespace(|| "out"), sum.values[0], 0)?;
+        test_chip.expose_public(layouter.namespace(|| "out"), sum.values[1], 1)?;
+        test_chip.expose_public(layouter.namespace(|| "out"), sum.values[2], 2)?;
+        test_chip.expose_public(layouter.namespace(|| "out"), carry, 3)?;
+        Ok(())
+    }
+}
+
+#[test]
+fn check() {
+    use halo2::dev::MockProver;
+    let pub_inputs = vec![Fp::from(0x3456), Fp::from(0x12)];
+
+    let circuit = MyCircuit {
+        x0: Fp::from(0x1),
+        x1: Fp::from(0x1),
+        x2: Fp::from(0x1),
+        o0: Fp::from(0x2),
+        o1: Fp::from(0x2),
+        o2: Fp::from(0x2),
+        carry: Fp::from(0x0)
+    };
+    let prover = MockProver::run(10, &circuit, vec![pub_inputs]).unwrap();
+    let presult = prover.verify();
+    println!("Error {:?}", presult);
+
+    assert!(presult.is_ok());
 }

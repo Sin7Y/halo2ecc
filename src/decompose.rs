@@ -45,11 +45,11 @@ impl<F: FieldExt + PrimeFieldBits> Chip<F> for DecomposeChip<F> {
 }
 
 impl<F: FieldExt + PrimeFieldBits> DecomposeChip<F> {
-    fn constructor(config: DecomposeConfig<F>) -> Self {
+    pub fn constructor(config: DecomposeConfig<F>) -> Self {
         DecomposeChip { config }
     }
 
-    fn configure(
+    pub fn configure(
         cs: &mut ConstraintSystem<Fp>,
         tbl_d: TableColumn, //domain of table
     ) -> DecomposeConfig<F> {

@@ -13,7 +13,7 @@ pub struct FsAdvice<F: FieldExt + PrimeFieldBits> {
     pub _marker: PhantomData<F>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Copy)]
 pub struct Number<F: FieldExt> {
     pub cell: Cell,
     pub value: Option<F>,
