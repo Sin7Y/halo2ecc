@@ -1,27 +1,23 @@
 // Decompose an Fp element into bitwise byte chucks
 
-use std::marker::PhantomData;
-use crate::utils::*;
-use crate::types::Number;
-use std::convert::TryFrom;
-use ff::PrimeFieldBits;
 use crate::testchip::*;
+use crate::types::Number;
+use crate::utils::*;
+use ff::PrimeFieldBits;
+use std::convert::TryFrom;
+use std::marker::PhantomData;
 
 use halo2::{
     arithmetic::FieldExt,
-    circuit::{Chip, Layouter, SimpleFloorPlanner, Region},
+    circuit::{Chip, Layouter, Region, SimpleFloorPlanner},
     dev::{MockProver, VerifyFailure},
     pasta::Fp,
-    plonk::{
-        Advice, Circuit, Column, ConstraintSystem,
-        Error, Expression, Selector, TableColumn
-    },
+    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Selector, TableColumn},
     poly::Rotation,
 };
 
-
 #[derive(Clone, Debug)]
-pub struct DecomposeConfig<F:FieldExt + PrimeFieldBits> {
+pub struct DecomposeConfig<F: FieldExt + PrimeFieldBits> {
     pub c: Column<Advice>,
     remainder: Column<Advice>,
     sum: Column<Advice>,
@@ -31,11 +27,11 @@ pub struct DecomposeConfig<F:FieldExt + PrimeFieldBits> {
     _marker: PhantomData<F>,
 }
 
-struct DecomposeChip<F:FieldExt + PrimeFieldBits> {
+struct DecomposeChip<F: FieldExt + PrimeFieldBits> {
     config: DecomposeConfig<F>,
 }
 
-impl<F:FieldExt + PrimeFieldBits> Chip<F> for DecomposeChip<F> {
+impl<F: FieldExt + PrimeFieldBits> Chip<F> for DecomposeChip<F> {
     type Config = DecomposeConfig<F>;
     type Loaded = ();
 
@@ -48,14 +44,15 @@ impl<F:FieldExt + PrimeFieldBits> Chip<F> for DecomposeChip<F> {
     }
 }
 
-impl<F:FieldExt + PrimeFieldBits> DecomposeChip<F> {
+impl<F: FieldExt + PrimeFieldBits> DecomposeChip<F> {
     fn constructor(config: DecomposeConfig<F>) -> Self {
         DecomposeChip { config }
     }
 
-    fn configure(cs: &mut ConstraintSystem<Fp>,
-            tbl_d:TableColumn, //domain of table
-        ) -> DecomposeConfig<F> {
+    fn configure(
+        cs: &mut ConstraintSystem<Fp>,
+        tbl_d: TableColumn, //domain of table
+    ) -> DecomposeConfig<F> {
         let c = cs.advice_column();
         let r = cs.advice_column();
         let b = cs.advice_column();
@@ -69,8 +66,8 @@ impl<F:FieldExt + PrimeFieldBits> DecomposeChip<F> {
         // Make sure the remainder does not overflow so that it
         // equals a range check of each remainder
         cs.lookup(|meta| {
-          let r_cur = meta.query_advice(r, Rotation::cur());
-          vec![(r_cur, tbl_d)]
+            let r_cur = meta.query_advice(r, Rotation::cur());
+            vec![(r_cur, tbl_d)]
         });
 
         cs.create_gate("range check", |meta| {
@@ -87,18 +84,26 @@ impl<F:FieldExt + PrimeFieldBits> DecomposeChip<F> {
             let sum_cur = meta.query_advice(sum, Rotation::cur());
 
             let c_next = meta.query_advice(c, Rotation::next());
-            let r_next = meta.query_advice(r, Rotation::next());
             let b_next = meta.query_advice(b, Rotation::next());
-            let sum_next = meta.query_advice(b, Rotation::next());
+            let sum_next = meta.query_advice(sum, Rotation::next());
 
             let v = c_cur.clone() - c_next * to_expr(256);
             vec![
-                sum_next - sum_cur - (r_cur.clone() * b_cur.clone()),
-                b_next - b_cur * to_expr(2),
-                s * (r_cur - v)
+                s.clone() * (sum_next - sum_cur - (r_cur.clone() * b_cur.clone())),
+                s.clone() * (b_next - b_cur * to_expr(256)),
+                s.clone() * (r_cur - v),
             ]
         });
-        DecomposeConfig { c, s, remainder:r, sum, b, tbl_d, _marker: PhantomData }
+
+        DecomposeConfig {
+            c,
+            s,
+            remainder: r,
+            sum,
+            b,
+            tbl_d,
+            _marker: PhantomData,
+        }
     }
 
     fn load_range_table(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
@@ -127,70 +132,63 @@ impl<F:FieldExt + PrimeFieldBits> DecomposeChip<F> {
             || "load private",
             |mut region| {
                 let config = self.config();
-                for idx in 0..num_chunks {
-                    config.s.enable(&mut region, idx)?;
+
+                for row in 0..num_chunks {
+                    config.s.enable(&mut region, row)?;
                 }
-                let i = input.clone();
-                let mut r = i.clone().value.unwrap();
-                let chunks:Vec<u64> = decompose_eight_bits::<F>(r, num_chunks); // little endian
-                let two_pow_k_inv = F::from_u64(256 as u64).invert().unwrap();
-                let mut v = input.clone();
-                let mut b = F::one();
+
+                let bytes = input.value.unwrap().to_bytes();
+                let mut b = F::from(1);
+                let mut c = input.clone().value.unwrap();
                 let mut sum = F::zero();
-                region.assign_advice (
-                  || format! ("s_{:?}", 0),
-                  config.sum,
-                  0,
-                  || Ok(F::zero())
-                )?;
-                let init_cell = region.assign_advice (
-                  || format! ("c_{:?}", 0),
-                  config.c,
-                  0,
-                  || Ok(r)
-                )?;
-                region.constrain_equal (i.clone().cell, init_cell);
-                region.assign_advice (
-                  || format! ("b_{:?}", 0),
-                  config.b,
-                  0,
-                  || Ok(b)
-                )?;
-                println!("omg ?");
-                for (p, chunk) in chunks.iter().enumerate() {
-                        let chunk_fp = F::from_u64(u64::try_from(*chunk).unwrap());
-                        let chunk_next = (r - chunk_fp) * two_pow_k_inv;
-                        sum = chunk_fp * b + sum;
-                        println!("{:?} - {:?} - {:?}", chunk_fp, chunk_next, b);
-                        region.assign_advice (
-                          || format! ("b_{:?}", p + 1),
-                          config.b,
-                          p + 1,
-                          || Ok(F::from_u64(2) * b)
-                        )?;
-                        region.assign_advice (
-                          || format!("r_{:?}", p + 1),
-                          config.remainder,
-                          p,
-                          || Ok(chunk_fp)
-                        )?;
-                        let carry_cell = region.assign_advice (
-                          || format!("c_{:?}", p + 1),
-                          config.c,
-                          p + 1,
-                          || Ok(chunk_next)
-                        )?;
-                        let cell = region.assign_advice (
-                          || format!("s_{:?}", p+1),
-                          config.sum,
-                          p+1,
-                          || Ok(sum)
-                        )?;
-                        r = chunk_next;
-                    output = Some (Number::<F>{cell, value: Some(sum)});
-                    carry = Some (Number::<F>{cell: carry_cell, value: Some(chunk_next)});
-                    b = F::from_u64(2) * b;
-                };
+
+                for row in 0..num_chunks + 1 {
+                    let rem =
+                        if row != num_chunks {
+                            F::from_u64(bytes[row].into())
+                        } else {
+                            F::zero()
+                        };
+
+                    println!("row: {:?}", row);
+                    println!("c: {:?}", c);
+                    println!("b: {:?}", b);
+                    println!("sum: {:?}", sum);
+                    println!("rem: {:?}", rem);
+
+                    let c_cell =
+                        region.assign_advice(|| format!("c_{:?}", 0), config.c, row, || Ok(c))?;
+
+                    if row == 0 {
+                        region.constrain_equal(input.cell, c_cell)?;
+                    }
+
+                    region.assign_advice(|| format!("shift_{:?}", row), config.b, row, || Ok(b))?;
+
+                    region.assign_advice(
+                        || format!("rem_{:?}", row),
+                        config.remainder,
+                        row,
+                        || Ok(rem),
+                    )?;
+
+                    let sum_cell = region.assign_advice(
+                        || format!("sum_{:?}", row),
+                        config.sum,
+                        row,
+                        || Ok(sum),
+                    )?;
+
+                    if row == num_chunks {
+                        output = Some(Number::<F>{cell: sum_cell, value: Some(c)});
+                        carry = Some(Number::<F>{cell: c_cell, value: Some(sum)});
+                    }
+
+                    sum += rem * b;
+                    b *= F::from(256);
+                    c = N_div_256(c);
+                }
+
                 Ok(())
             },
         )?;
@@ -200,9 +198,7 @@ impl<F:FieldExt + PrimeFieldBits> DecomposeChip<F> {
 
 #[derive(Clone, Default)]
 struct MyCircuit {
-    input: Fp,
-    output: Fp,
-    carry: Fp,
+    input: Fp
 }
 
 #[derive(Clone, Debug)]
@@ -212,7 +208,7 @@ struct TestCircConfig {
 }
 
 impl Circuit<Fp> for MyCircuit {
-    type Config = TestCircConfig ;
+    type Config = TestCircConfig;
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
@@ -236,13 +232,14 @@ impl Circuit<Fp> for MyCircuit {
         println!("Start synthesize ...");
         let test_chip = TestChip::<Fp>::construct(config.tconfig);
         let input_cell = test_chip.load_private(layouter.namespace(|| "cell"), Some(self.input))?;
-        let output_cell = test_chip.load_private(layouter.namespace(|| "cell"), Some(self.input))?;
-        let carry_cell = test_chip.load_private(layouter.namespace(|| "cell"), Some(self.input))?;
         let chip = DecomposeChip::<Fp>::constructor(config.pconfig);
         println!("loading range table ...");
-        //chip.load_range_table(&mut layouter);
+
+        chip.load_range_table(&mut layouter)?;
         println!("assign region ...");
-        chip.decompose(&mut layouter, input_cell.clone(),10)?;
+        let (sum, carry) = chip.decompose(&mut layouter, input_cell.clone(), 10)?;
+        test_chip.expose_public(layouter.namespace(|| "out"), sum, 0)?;
+        test_chip.expose_public(layouter.namespace(|| "out"), carry, 1)?;
         Ok(())
     }
 }
@@ -253,14 +250,12 @@ fn check() {
     // The number of rows used in the constraint system matrix.
     const PUB_INPUT: u64 = 3;
 
-    let mut pub_inputs = vec![Fp::from(6)];
+    let pub_inputs = vec![Fp::from(257), Fp::from(0)];
 
     let circuit = MyCircuit {
-        input: Fp::from(1),
-        carry: Fp::from(2),
-        output: Fp::from(3),
+        input: Fp::from(257)
     };
-    let prover = MockProver::run(5, &circuit, vec![pub_inputs]).unwrap();
+    let prover = MockProver::run(9, &circuit, vec![pub_inputs]).unwrap();
     let presult = prover.verify();
     println!("Error {:?}", presult);
 

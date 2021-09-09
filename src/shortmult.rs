@@ -198,6 +198,7 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> ShortMultChip<Fp, F> {
                 for row in 0..num_chunks {
                     config.sel.enable(&mut region, row)?;
                 }
+
                 for row in 0..num_chunks + 1 {
                     region.assign_advice(
                         || format!("shift_{:?}", row),
