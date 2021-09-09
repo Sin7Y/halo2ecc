@@ -299,6 +299,7 @@ impl Circuit<Fp> for MyCircuit {
                 Number::<Fp>{cell:c2.cell, value:Some(self.x2)},
         ]};
         let dchip = DecomposeChip::<Fp>::constructor(config.dconfig);
+        dchip.load_range_table(&mut layouter);
         let chip = FNormChip::<Fq, Fp>::construct(config.nconfig, dchip);
 
         println!("assign region ...");
@@ -314,7 +315,12 @@ impl Circuit<Fp> for MyCircuit {
 #[test]
 fn check() {
     use halo2::dev::MockProver;
-    let pub_inputs = vec![Fp::from(0x3456), Fp::from(0x12)];
+    let pub_inputs = vec![
+        Fp::from(0x2),
+        Fp::from(0x2),
+        Fp::from(0x2),
+        Fp::from(0x0),
+    ];
 
     let circuit = MyCircuit {
         x0: Fp::from(0x1),

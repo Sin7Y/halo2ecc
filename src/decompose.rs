@@ -106,7 +106,7 @@ impl<F: FieldExt + PrimeFieldBits> DecomposeChip<F> {
         }
     }
 
-    fn load_range_table(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+    pub fn load_range_table(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         let table_values: Vec<F> = (0..1 << 8).map(|e| F::from_u64(e)).collect();
         layouter.assign_table(
             || "",
