@@ -42,7 +42,7 @@ pub struct FNormConfig {
 }
 
 impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FNormChip<Fp, F> {
-    fn construct(config: <Self as Chip<F>>::Config, decompose_chip:DecomposeChip<F>) -> Self {
+    pub fn construct(config: <Self as Chip<F>>::Config, decompose_chip:DecomposeChip<F>) -> Self {
         Self {
             config,
             decompose_chip,
@@ -50,7 +50,7 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FNormChip<Fp, F> {
         }
     }
 
-    fn configure(
+    pub fn configure(
         meta: &mut ConstraintSystem<F>,
     ) -> <Self as Chip<F>>::Config {
         let op1 = meta.advice_column();

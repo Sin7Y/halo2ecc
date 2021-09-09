@@ -32,14 +32,14 @@ pub struct PlusConfig {
 }
 
 impl<F: FieldExt + PrimeFieldBits> PlusChip<F> {
-  fn construct(config: <Self as Chip<F>>::Config) -> Self {
+  pub fn construct(config: <Self as Chip<F>>::Config) -> Self {
     Self {
       config,
       _marker: PhantomData,
     }
   }
 
-  fn configure(meta: &mut ConstraintSystem<F>) -> <Self as Chip<F>>::Config {
+  pub fn configure(meta: &mut ConstraintSystem<F>) -> <Self as Chip<F>>::Config {
     let x = meta.advice_column();
     let y = meta.advice_column();
     let z = meta.advice_column();

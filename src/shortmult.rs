@@ -223,8 +223,8 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> ShortMultChip<Fp, F> {
                     let rem = Fp::from_u64(bytes[row].into());
 
                     let lookup = get_shift_lookup(rem, shift_base + row as u64);
-                    println!("shift {} ", shift_base);
-                    println!("rem {} {:?}", row, rem);
+                    //println!("shift {} ", shift_base);
+                    //println!("rem {} {:?}", row, rem);
 
                     let c_cell =
                         region.assign_advice(|| format!("c_{:?}", 0), config.c, row, || Ok(c))?;
@@ -249,7 +249,7 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> ShortMultChip<Fp, F> {
                             || Ok(lookupi),
                         )?;
 
-                        println!("lookupi {} {} {:?}", row, i, lookupi);
+                        //println!("lookupi {} {} {:?}", row, i, lookupi);
                         let sum_cell = region.assign_advice(
                             || format!("sum_{:?}_{:?}", i, row),
                             config.sum[i],
@@ -261,7 +261,7 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> ShortMultChip<Fp, F> {
                             region.constrain_equal(base_sum.values[i].cell, sum_cell)?;
                         }
 
-                        println!("sum {} {} {:?}", row, i, sum[i]);
+                        //println!("sum {} {} {:?}", row, i, sum[i]);
                         sum[i] += lookupi;
                     }
 
