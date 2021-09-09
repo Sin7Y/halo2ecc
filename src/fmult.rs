@@ -295,20 +295,20 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FMult<Fp, F> for FMultChip<Fp, 
                       ]});
                 Ok(())
             },
-        );
+        )?;
         // FIXME: the last argument is the shift starting index ?
-        self.shift_chip.constrain(layouter,
+        let cm_repr_cons = self.shift_chip.constrain(layouter,
             cm_num.unwrap(),
-            cm_repr.unwrap(),
             (96 + 80)/8 + 1,
-            F::from(0),
-        );
-        self.shift_chip.constrain(layouter,
+            0,
+        )?;
+        //cm_repr.unwrap(),
+        let ch_repr_cons = self.shift_chip.constrain(layouter,
             ch_num.unwrap(),
-            ch_repr.unwrap(),
             (96 + 96)/8 + 1,
-            F::from((320 - 240)/8),
-        );
+            (320 - 240)/8,
+        )?;
+        //ch_repr.unwrap(),
         Ok(out.unwrap())
     }
 }

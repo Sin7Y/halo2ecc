@@ -34,7 +34,7 @@ pub struct ShortMultConfig {
 pub trait ShortMult<F: FieldExt + PrimeFieldBits>: Chip<F> {
     fn constrain(
         &self,
-        layouter: impl Layouter<F>,
+        layouter: &mut impl Layouter<F>,
         a: Number<F>,
         num_chunks: usize,
         shift_base: u64,
@@ -176,7 +176,7 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> ShortMultChip<Fp, F> {
 
     fn assign_region(
         &self,
-        mut layouter: impl Layouter<F>,
+        layouter: &mut impl Layouter<F>,
         input: Number<F>,
         num_chunks: usize,
         shift_base: u64,
@@ -317,7 +317,7 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> Chip<F> for ShortMultChip<Fp, F
 impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> ShortMult<F> for ShortMultChip<Fp, F> {
     fn constrain(
         &self,
-        layouter: impl Layouter<F>,
+        layouter: &mut impl Layouter<F>,
         a: Number<F>,
         num_chunks: usize,
         shift_base: u64,
@@ -382,7 +382,7 @@ impl<F: FieldExt + PrimeFieldBits> Circuit<F> for MyCircuit<F> {
         )?;
 
         let smult_chip = ShortMultChip::<Fq, F>::construct(config.smult);
-        let out = smult_chip.constrain(layouter.namespace(|| "smult"), input, 10, 0)?;
+        let out = smult_chip.constrain(&mut layouter.namespace(|| "smult"), input, 10, 0)?;
         println!("out is {:?}", out);
         test_chip.expose_public(layouter.namespace(|| "out0"), out.0.values[0].clone(), 0)?;
         test_chip.expose_public(layouter.namespace(|| "out1"), out.0.values[1].clone(), 1)?;
