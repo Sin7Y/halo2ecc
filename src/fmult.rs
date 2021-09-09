@@ -6,9 +6,9 @@ use halo2::{
 };
 
 use crate::decompose::{DecomposeChip, DecomposeConfig};
-use crate::shortmult::{ShortMult, ShortMultChip, ShortMultConfig};
 use crate::fnormalize::{FNorm, FNormChip, FNormConfig};
-use crate::plus::{PlusChip, Plus, PlusConfig};
+use crate::plus::{Plus, PlusChip, PlusConfig};
+use crate::shortmult::{ShortMult, ShortMultChip, ShortMultConfig};
 use crate::types::{Fs, FsAdvice, Number};
 use crate::utils::*;
 use ff::PrimeFieldBits;
@@ -33,6 +33,7 @@ struct FMultConfig<F: FieldExt + PrimeFieldBits> {
     x: FsAdvice<F>,
     y: FsAdvice<F>,
     z: FsAdvice<F>,
+    sel: Selector,
 
     advice: Column<Advice>,
     constant: Column<Fixed>,
@@ -62,6 +63,8 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FMultChip<Fp, F> {
 
         let constant = meta.fixed_column();
         meta.enable_constant(constant);
+
+        let sel = meta.selector();
 
         let x = FsAdvice::<F> {
             advices: [
@@ -97,6 +100,7 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FMultChip<Fp, F> {
         }
 
         meta.create_gate("mult-split", |meta| {
+            let s = meta.query_selector(sel);
             // Controlled by init_sel
             // | xl | xm | xh | yl | ym | yh | zl | zm | zh
 
@@ -114,15 +118,24 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FMultChip<Fp, F> {
             let shift_160 = Expression::Constant(pow2::<F>(160));
 
             vec![
-                zl - (xl.clone() * yl.clone()
-                    + (xm.clone() * yl.clone() + xl.clone() * ym.clone()) * shift_80
-                    + xm.clone() * ym.clone() * shift_160),
-                zm - (xm.clone() * yh.clone() + xh.clone() * ym.clone()),
-                zh - (xh.clone() * yh.clone()),
+                s.clone()
+                    * (zl
+                        - (xl.clone() * yl.clone()
+                            + (xm.clone() * yl.clone() + xl.clone() * ym.clone()) * shift_80
+                            + xm.clone() * ym.clone() * shift_160)),
+                s.clone() * (zm - (xm.clone() * yh.clone() + xh.clone() * ym.clone())),
+                s.clone() * (zh - (xh.clone() * yh.clone())),
             ]
         });
 
-        return FMultConfig { x, y, z, advice, constant };
+        return FMultConfig {
+            x,
+            y,
+            z,
+            sel,
+            advice,
+            constant,
+        };
     }
 
     fn assign_fs(
@@ -174,7 +187,7 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FMultChip<Fp, F> {
         &self,
         layouter: &mut impl Layouter<F>,
         input: Number<F>,
-        constant: F
+        constant: F,
     ) -> Result<(), Error> {
         let config = self.config();
 
@@ -187,7 +200,7 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FMultChip<Fp, F> {
                     0,
                     constant,
                 )?;
-                region.constrain_equal(input.cell, _cell);
+                region.constrain_equal(input.cell, _cell)?;
                 Ok(())
             },
         )?;
@@ -261,6 +274,9 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FMultChip<Fp, F> {
 
 impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FMult<Fp, F> for FMultChip<Fp, F> {
     fn mult(&self, layouter: &mut impl Layouter<F>, a: Fs<F>, b: Fs<F>) -> Result<Fs<F>, Error> {
+        println!("a = {:?}", a.values);
+        println!("b = {:?}", b.values);
+
         let l1output = self.l1mult(layouter, a, b)?;
         let (l, rem) = self
             .decom_chip
@@ -280,34 +296,52 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FMult<Fp, F> for FMultChip<Fp, 
         println!("l2output = {:?}", l2output);
 
         let rem = self.plus_chip.plus(layouter, rem, l1output.values[2])?;
-        let (l3output, rem) = self.smult_chip.constrain(
-            layouter,
-            rem,
-            l2output,
-            24,
-            10,
-        )?;
+        let (l3output, rem) = self.smult_chip.constrain(layouter, rem, l2output, 24, 10)?;
 
         println!("l3output = {:?}", l3output);
 
         self.check_constant(layouter, rem, F::zero())?;
 
         let zero_cell = self.load_constant(layouter, F::zero())?;
-        let (l4output, carry) = self.fnorm_chip.normalize(layouter, l3output, Fs{values: [zero_cell, zero_cell, zero_cell]})?;
+        let (l4output, carry) = self.fnorm_chip.normalize(
+            layouter,
+            l3output,
+            Fs {
+                values: [zero_cell, zero_cell, zero_cell],
+            },
+        )?;
 
         // round 1
         let (l4output, res) = self.smult_chip.constrain(layouter, carry, l4output, 1, 2)?;
-        let (l4output, carry) = self.fnorm_chip.normalize(layouter, l4output, Fs{values: [zero_cell, zero_cell, zero_cell]})?;
+        let (l4output, carry) = self.fnorm_chip.normalize(
+            layouter,
+            l4output,
+            Fs {
+                values: [zero_cell, zero_cell, zero_cell],
+            },
+        )?;
         self.check_constant(layouter, res, F::zero())?;
 
         // round 2
         let (l4output, res) = self.smult_chip.constrain(layouter, carry, l4output, 1, 2)?;
-        let (l4output, carry) = self.fnorm_chip.normalize(layouter, l4output, Fs{values: [zero_cell, zero_cell, zero_cell]})?;
+        let (l4output, carry) = self.fnorm_chip.normalize(
+            layouter,
+            l4output,
+            Fs {
+                values: [zero_cell, zero_cell, zero_cell],
+            },
+        )?;
         self.check_constant(layouter, res, F::zero())?;
 
         // round 3
         let (l4output, res) = self.smult_chip.constrain(layouter, carry, l4output, 1, 2)?;
-        let (l4output, carry) = self.fnorm_chip.normalize(layouter, l4output, Fs{values: [zero_cell, zero_cell, zero_cell]})?;
+        let (l4output, carry) = self.fnorm_chip.normalize(
+            layouter,
+            l4output,
+            Fs {
+                values: [zero_cell, zero_cell, zero_cell],
+            },
+        )?;
         self.check_constant(layouter, res, F::zero())?;
         self.check_constant(layouter, carry, F::zero())?;
 
@@ -323,7 +357,7 @@ use halo2::plonk::Circuit;
 
 #[derive(Clone, Default)]
 struct MyCircuit {
-    inputs: [Fp;6],
+    inputs: [Fp; 6],
 }
 
 #[derive(Clone, Debug)]
@@ -354,13 +388,26 @@ impl Circuit<Fp> for MyCircuit {
         let table_col = cs.lookup_table_column();
         let bconf = ByteOpChip::<Fp, Fq, ShiftOp>::configure(cs);
         let pconf = PlusChip::<Fp>::configure(cs);
-        let sconf = ShortMultChip::<Fq, Fp>::configure(cs,
-            bconf.tbl_l, bconf.tbl_r, bconf.tbl_s, bconf.tbl_o);
+        let sconf = ShortMultChip::<Fq, Fp>::configure(
+            cs,
+            bconf.tbl_l,
+            bconf.tbl_r,
+            bconf.tbl_s,
+            bconf.tbl_o,
+        );
         let mconf = FMultChip::<Fq, Fp>::configure(cs);
         let nconf = FNormChip::<Fq, Fp>::configure(cs);
         let dconf = DecomposeChip::<Fp>::configure(cs, table_col);
         let tconf = TestChip::configure(cs);
-        return CircuitConfig { bconf, pconf, sconf, dconf, nconf, tconf, mconf };
+        return CircuitConfig {
+            bconf,
+            pconf,
+            sconf,
+            dconf,
+            nconf,
+            tconf,
+            mconf,
+        };
     }
 
     fn synthesize(
@@ -383,8 +430,7 @@ impl Circuit<Fp> for MyCircuit {
         let dchip_dup = DecomposeChip::<Fp>::constructor(config.dconf);
         let nchip = FNormChip::<Fq, Fp>::construct(config.nconf, dchip_dup);
         let schip = ShortMultChip::<Fq, Fp>::construct(config.sconf);
-        let mchip = FMultChip::<Fq, Fp>::construct(config.mconf,
-            schip, dchip, pchip, nchip);
+        let mchip = FMultChip::<Fq, Fp>::construct(config.mconf, schip, dchip, pchip, nchip);
 
         let x0 = test_chip.load_private(layouter.namespace(|| "load"), Some(self.inputs[0]))?;
         let x1 = test_chip.load_private(layouter.namespace(|| "load"), Some(self.inputs[1]))?;
@@ -393,17 +439,40 @@ impl Circuit<Fp> for MyCircuit {
         let y1 = test_chip.load_private(layouter.namespace(|| "load"), Some(self.inputs[4]))?;
         let y2 = test_chip.load_private(layouter.namespace(|| "load"), Some(self.inputs[5]))?;
 
-        let out = mchip.mult(&mut layouter,
-            Fs::<Fp> {values: [
-                Number::<Fp>{cell:x0.cell, value:Some(self.inputs[0])},
-                Number::<Fp>{cell:x1.cell, value:Some(self.inputs[1])},
-                Number::<Fp>{cell:x2.cell, value:Some(self.inputs[2])},
-            ]},
-            Fs::<Fp> {values: [
-                Number::<Fp>{cell:y0.cell, value:Some(self.inputs[3])},
-                Number::<Fp>{cell:y1.cell, value:Some(self.inputs[4])},
-                Number::<Fp>{cell:y2.cell, value:Some(self.inputs[5])},
-            ]},
+        let out = mchip.mult(
+            &mut layouter,
+            Fs::<Fp> {
+                values: [
+                    Number::<Fp> {
+                        cell: x0.cell,
+                        value: Some(self.inputs[0]),
+                    },
+                    Number::<Fp> {
+                        cell: x1.cell,
+                        value: Some(self.inputs[1]),
+                    },
+                    Number::<Fp> {
+                        cell: x2.cell,
+                        value: Some(self.inputs[2]),
+                    },
+                ],
+            },
+            Fs::<Fp> {
+                values: [
+                    Number::<Fp> {
+                        cell: y0.cell,
+                        value: Some(self.inputs[3]),
+                    },
+                    Number::<Fp> {
+                        cell: y1.cell,
+                        value: Some(self.inputs[4]),
+                    },
+                    Number::<Fp> {
+                        cell: y2.cell,
+                        value: Some(self.inputs[5]),
+                    },
+                ],
+            },
         )?;
 
         println!("values = {:?}", out.values);
@@ -464,11 +533,7 @@ fn fmult_test2() {
 
     let circuit = MyCircuit { inputs };
 
-    let mut public_inputs = vec![
-        Fp::from_u128(1),
-        Fp::from_u128(4),
-        Fp::from_u128(4),
-    ];
+    let mut public_inputs = vec![Fp::from_u128(1), Fp::from_u128(4), Fp::from_u128(4)];
 
     let prover = MockProver::run(k, &circuit, vec![public_inputs.clone()]).unwrap();
     assert_eq!(prover.verify(), Ok(()));
