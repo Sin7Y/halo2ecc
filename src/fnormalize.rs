@@ -129,6 +129,7 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FNorm<Fp, F> for FNormChip<Fp, 
         layouter.assign_region(
             || "load row0",
             |mut region| {
+                //config.sel.enable(&mut region, 0)?;
                 region.assign_advice(
                     || format!("carry_{}", 0),
                     config.carry,
@@ -167,12 +168,14 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FNorm<Fp, F> for FNormChip<Fp, 
         layouter.assign_region(
             || "load row0",
             |mut region| {
-                region.assign_advice(
+                //config.sel.enable(&mut region, 1)?;
+                let c = region.assign_advice(
                     || format!("carry_{}", 1),
                     config.carry,
                     0,
                     || Ok(carry_l.clone().value.unwrap()),
                 )?;
+                region.constrain_equal(carry_l.cell, c);
 
                 let cell = Some(region.assign_advice(
                    || format!("sum_{}", 1),
@@ -197,6 +200,7 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FNorm<Fp, F> for FNormChip<Fp, 
                 Ok(())
             },
         )?;
+
         let (sum_m, carry_m) =
             self.decompose_chip.decompose(layouter, Number::<F>{cell: cell.unwrap(), value: Some(vm) }, 10)?;
 
@@ -204,6 +208,7 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FNorm<Fp, F> for FNormChip<Fp, 
         layouter.assign_region(
             || "load row0",
             |mut region| {
+                //config.sel.enable(&mut region, 2)?;
                 region.assign_advice(
                     || format!("carry_{}", 2),
                     config.carry,
@@ -211,7 +216,7 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FNorm<Fp, F> for FNormChip<Fp, 
                     || Ok(carry_m.clone().value.unwrap()),
                 )?;
 
-                let cell = (region.assign_advice(
+                cell = Some (region.assign_advice(
                     || format!("sum_{}", 2),
                     config.sum,
                     2,
@@ -237,7 +242,9 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FNorm<Fp, F> for FNormChip<Fp, 
             self.decompose_chip.decompose(layouter, Number::<F>{cell: cell.unwrap(), value: Some(vh) }, 16)?;
 
         out = Some (Fs::<F> {values: [sum_l, sum_m, sum_h]});
+        //out = Some (Fs::<F> {values: [sum_l.clone(), sum_l.clone(), sum_l]});
         Ok((out.unwrap(), carry_h))
+        //Ok((out.unwrap(), carry_l))
     }
 }
 

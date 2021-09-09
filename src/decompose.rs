@@ -174,8 +174,8 @@ impl<F: FieldExt + PrimeFieldBits> DecomposeChip<F> {
                     )?;
 
                     if row == num_chunks {
-                        output = Some(Number::<F>{cell: sum_cell, value: Some(c)});
-                        carry = Some(Number::<F>{cell: c_cell, value: Some(sum)});
+                        output = Some(Number::<F>{cell: sum_cell, value: Some(sum)});
+                        carry = Some(Number::<F>{cell: c_cell, value: Some(c)});
                     }
 
                     sum += rem * b;
@@ -192,7 +192,8 @@ impl<F: FieldExt + PrimeFieldBits> DecomposeChip<F> {
 
 #[derive(Clone, Default)]
 struct MyCircuit {
-    input: Fp
+    input: Fp,
+    chunk_size: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -231,7 +232,7 @@ impl Circuit<Fp> for MyCircuit {
 
         chip.load_range_table(&mut layouter)?;
         println!("assign region ...");
-        let (sum, carry) = chip.decompose(&mut layouter, input_cell.clone(), 2)?;
+        let (sum, carry) = chip.decompose(&mut layouter, input_cell.clone(), self.chunk_size)?;
         test_chip.expose_public(layouter.namespace(|| "out"), sum, 0)?;
         test_chip.expose_public(layouter.namespace(|| "out"), carry, 1)?;
         Ok(())
@@ -239,7 +240,7 @@ impl Circuit<Fp> for MyCircuit {
 }
 
 #[test]
-fn check() {
+fn test1() {
     use halo2::dev::MockProver;
     // The number of rows used in the constraint system matrix.
     const PUB_INPUT: u64 = 3;
@@ -247,7 +248,27 @@ fn check() {
     let pub_inputs = vec![Fp::from(0x3456), Fp::from(0x12)];
 
     let circuit = MyCircuit {
-        input: Fp::from(0x123456)
+        input: Fp::from(0x123456),
+        chunk_size: 2,
+    };
+    let prover = MockProver::run(9, &circuit, vec![pub_inputs]).unwrap();
+    let presult = prover.verify();
+    println!("Error {:?}", presult);
+
+    assert!(presult.is_ok());
+}
+
+#[test]
+fn test2() {
+    use halo2::dev::MockProver;
+    // The number of rows used in the constraint system matrix.
+    const PUB_INPUT: u64 = 3;
+
+    let pub_inputs = vec![Fp::from(0x2), Fp::from(0x0)];
+
+    let circuit = MyCircuit {
+        input: Fp::from(0x2),
+        chunk_size: 10,
     };
     let prover = MockProver::run(9, &circuit, vec![pub_inputs]).unwrap();
     let presult = prover.verify();
