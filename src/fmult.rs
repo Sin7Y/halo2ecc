@@ -32,7 +32,7 @@ struct FMultConfig<F: FieldExt + PrimeFieldBits> {
     /// Two fp numbers, three Columns each
     x: FsAdvice<F>,
     y: FsAdvice<F>,
-    z: FsAdvice<F>,
+    output: [Column<Advice>; 4],
     sel: Selector,
 
     advice: Column<Advice>,
@@ -84,19 +84,20 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FMultChip<Fp, F> {
             _marker: PhantomData,
         };
 
-        let z = FsAdvice::<F> {
-            advices: [
-                meta.advice_column(),
-                meta.advice_column(),
-                meta.advice_column(),
-            ],
-            _marker: PhantomData,
-        };
+        let output = [
+            meta.advice_column(),
+            meta.advice_column(),
+            meta.advice_column(),
+            meta.advice_column(),
+        ];
 
         for i in 0..3 {
             meta.enable_equality(x.advices[i].into());
             meta.enable_equality(y.advices[i].into());
-            meta.enable_equality(z.advices[i].into());
+        }
+
+        for i in 0..4 {
+            meta.enable_equality(output[i].into());
         }
 
         meta.create_gate("mult-split", |meta| {
@@ -110,28 +111,33 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FMultChip<Fp, F> {
             let yh = meta.query_advice(y.advices[2], Rotation::cur());
             let ym = meta.query_advice(y.advices[1], Rotation::cur());
             let yl = meta.query_advice(y.advices[0], Rotation::cur());
-            let zh = meta.query_advice(z.advices[2], Rotation::cur());
-            let zm = meta.query_advice(z.advices[1], Rotation::cur());
-            let zl = meta.query_advice(z.advices[0], Rotation::cur());
+            let o3 = meta.query_advice(output[3], Rotation::cur());
+            let o2 = meta.query_advice(output[2], Rotation::cur());
+            let o1 = meta.query_advice(output[1], Rotation::cur());
+            let o0 = meta.query_advice(output[0], Rotation::cur());
 
             let shift_80 = Expression::Constant(pow2::<F>(80));
             let shift_160 = Expression::Constant(pow2::<F>(160));
 
             vec![
                 s.clone()
-                    * (zl
+                    * (o0
                         - (xl.clone() * yl.clone()
-                            + (xm.clone() * yl.clone() + xl.clone() * ym.clone()) * shift_80
-                            + (xm.clone() * ym.clone() + xh.clone() * yl.clone() + xl.clone() * yh.clone()) * shift_160)),
-                s.clone() * (zm - (xm.clone() * yh.clone() + xh.clone() * ym.clone())),
-                s.clone() * (zh - (xh.clone() * yh.clone())),
+                            + (xm.clone() * yl.clone() + xl.clone() * ym.clone()) * shift_80)),
+                s.clone()
+                    * (o1
+                        - (xm.clone() * ym.clone()
+                            + xh.clone() * yl.clone()
+                            + xl.clone() * yh.clone())),
+                s.clone() * (o2 - (xm.clone() * yh.clone() + xh.clone() * ym.clone())),
+                s.clone() * (o3 - (xh.clone() * yh.clone())),
             ]
         });
 
         return FMultConfig {
             x,
             y,
-            z,
+            output,
             sel,
             advice,
             constant,
@@ -234,9 +240,14 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FMultChip<Fp, F> {
         )?;
         Ok(num.unwrap())
     }
-    fn l1mult(&self, layouter: &mut impl Layouter<F>, a: Fs<F>, b: Fs<F>) -> Result<Fs<F>, Error> {
+    fn l1mult(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        a: Fs<F>,
+        b: Fs<F>,
+    ) -> Result<[Number<F>; 4], Error> {
         let config = self.config();
-        let mut output = None;
+        let mut ooutput = None;
 
         layouter.assign_region(
             || "load private",
@@ -252,24 +263,52 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FMultChip<Fp, F> {
                 let shift_80 = pow2::<F>(80);
                 let shift_160 = pow2::<F>(160);
 
-                let zh = xh.clone() * yh.clone();
-                let zm = xh * ym.clone() + xm.clone() * yh;
-                let zl = xl.clone() * yl.clone()
-                    + (xh.clone() * yl.clone() + xm.clone() * ym.clone() + xl.clone() * yh.clone())
-                        * shift_160
-                    + (xl * ym + xm * yl) * shift_80;
+                let mut output = [F::zero(), F::zero(), F::zero(), F::zero()];
+
+                output[3] = xh.clone() * yh.clone();
+                output[2] = xh * ym.clone() + xm.clone() * yh;
+                output[1] =
+                    xh.clone() * yl.clone() + xm.clone() * ym.clone() + xl.clone() * yh.clone();
+                output[0] = (xl * ym + xm * yl) * shift_80 + xl.clone() * yl.clone();
 
                 let _ = self.assign_fs(&mut region, config.x, [xl, xm, xh], 0, "fmult-x");
                 let _ = self.assign_fs(&mut region, config.y, [yl, ym, yh], 0, "fmult-y");
-                let z_fs = self.assign_fs(&mut region, config.z, [zl, zm, zh], 0, "fmult-z");
 
-                output = Some(z_fs);
+                let mut output_cells: Vec<Cell> = vec![];
+                for i in 0..4 {
+                    let cell = region.assign_advice(
+                        || "load constant value",
+                        config.output[i],
+                        0,
+                        || Ok(output[i]),
+                    )?;
+                    output_cells.push(cell);
+                }
+
+                ooutput = Some([
+                    Number {
+                        cell: output_cells[0],
+                        value: Some(output[0]),
+                    },
+                    Number {
+                        cell: output_cells[1],
+                        value: Some(output[1]),
+                    },
+                    Number {
+                        cell: output_cells[2],
+                        value: Some(output[2]),
+                    },
+                    Number {
+                        cell: output_cells[3],
+                        value: Some(output[3]),
+                    },
+                ]);
 
                 Ok(())
             },
         )?;
 
-        return Ok(output.unwrap());
+        return Ok(ooutput.unwrap());
     }
 }
 
@@ -279,24 +318,24 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FMult<Fp, F> for FMultChip<Fp, 
         println!("b = {:?}", b.values);
 
         let l1output = self.l1mult(layouter, a, b)?;
-        let (l, rem) = self
-            .decom_chip
-            .decompose(layouter, l1output.values[0], 10)?;
+        let (l, rem) = self.decom_chip.decompose(layouter, l1output[0], 10)?;
         let (m, h) = self.decom_chip.decompose(layouter, rem, 10)?;
 
         println!("l1output = {:?}", l1output);
 
-        let (l2output, rem) = self.smult_chip.constrain(
-            layouter,
-            l1output.values[1],
-            Fs { values: [l, m, h] },
-            32,
-            0,
-        )?;
+        // For x * 2 ** 160 part, we split into x1 * 2 ** 240 + x2 * 160 (x2 < 2 ** 80),
+        // Thus, we can directly add x2 to high field of l1output[0] and add x1 to l1output[2];
+        let (l1ouptput1_l, l1output1_h) = self.decom_chip.decompose(layouter, l1output[1], 10)?;
+        let h = self.plus_chip.plus(layouter, h, l1ouptput1_l)?;
+        let l1output2 = self.plus_chip.plus(layouter, l1output[2], l1output1_h)?;
+
+        let (l2output, rem) =
+            self.smult_chip
+                .constrain(layouter, l1output2, Fs { values: [l, m, h] }, 32, 0)?;
 
         println!("l2output = {:?}", l2output);
 
-        let rem = self.plus_chip.plus(layouter, rem, l1output.values[2])?;
+        let rem = self.plus_chip.plus(layouter, rem, l1output[3])?;
         let (l3output, rem) = self.smult_chip.constrain(layouter, rem, l2output, 24, 10)?;
 
         println!("rem {:?}", rem);
@@ -537,6 +576,43 @@ fn fmult_test2() {
     let circuit = MyCircuit { inputs };
 
     let mut public_inputs = vec![Fp::from_u128(1), Fp::from_u128(4), Fp::from_u128(4)];
+
+    let prover = MockProver::run(k, &circuit, vec![public_inputs.clone()]).unwrap();
+    assert_eq!(prover.verify(), Ok(()));
+
+    public_inputs[0] += Fp::one();
+    let prover = MockProver::run(k, &circuit, vec![public_inputs]).unwrap();
+    assert!(prover.verify().is_err());
+}
+
+#[test]
+fn fmult_test3() {
+    use halo2::{dev::MockProver, pasta::Fp};
+    let k = 17;
+
+    let a0 = Fp::from_u128(0x123456789abd98761234);
+    let a1 = Fp::from_u128(0x23243242543254355434);
+    let a2 = Fp::from_u128(0x1232349984344444421234);
+    let b0 = Fp::from_u128(0x47839127448391247834);
+    let b1 = Fp::from_u128(0x47381947832947923474);
+    let b2 = Fp::from_u128(0x8797923472384247847238);
+    let c0 = Fp::from_u128(0xed2a617aefbf7587e5be);
+    let c1 = Fp::from_u128(0x244d54126c138463f7f4);
+    let c2 = Fp::from_u128(0x84254c2b15f38e64597d0dfec);
+
+    let inputs = [a0, a1, a2, b0, b1, b2];
+
+    let circuit = MyCircuit { inputs };
+
+    let mut public_inputs = vec![c0, c1, c2];
+
+    let merge = |x0: Fp, x1: Fp, x2: Fp| {
+        Fq::from_bytes(&x0.to_bytes()).unwrap()
+            + Fq::from_bytes(&x1.to_bytes()).unwrap() * Fq::from(2).pow(&[80u64, 0u64, 0u64, 0u64])
+            + Fq::from_bytes(&x2.to_bytes()).unwrap() * Fq::from(2).pow(&[160u64, 0u64, 0u64, 0u64])
+    };
+
+    assert_eq!(merge(a0, a1, a2) * merge(b0, b1, b2), merge(c0, c1, c2));
 
     let prover = MockProver::run(k, &circuit, vec![public_inputs.clone()]).unwrap();
     assert_eq!(prover.verify(), Ok(()));
