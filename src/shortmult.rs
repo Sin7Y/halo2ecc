@@ -241,7 +241,7 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> ShortMultChip<Fp, F> {
                     )?;
 
                     for i in 0..3 {
-                        let lookupi: F = projF(lookup, i);
+                        let lookupi: F = proj_f(lookup, i);
                         region.assign_advice(
                             || format!("lookup_{:?}_{:?}", i, row),
                             config.lookup[i],

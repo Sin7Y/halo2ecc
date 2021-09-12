@@ -10,7 +10,7 @@ use halo2::circuit::{Chip, Layouter, SimpleFloorPlanner};
 use std::marker::PhantomData;
 
 use crate::types::Number;
-use crate::utils::projF;
+use crate::utils::proj_f;
 
 pub trait ByteOp<F: FieldExt> {
     fn bop(op1: usize, op2: usize) -> F;
@@ -121,7 +121,7 @@ impl<Fr: FieldExt, Fp: FieldExt, B: ByteOp<Fp>> ByteOpChip<Fr, Fp, B> {
                                 || "table_idx",
                                 self.config.tbl_o,
                                 offset,
-                                || Ok(projF::<Fp, Fr>(v, s)),
+                                || Ok(proj_f::<Fp, Fr>(v, s)),
                             )?;
 
                             table.assign_cell(
