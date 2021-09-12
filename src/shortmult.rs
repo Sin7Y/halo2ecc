@@ -30,7 +30,7 @@ pub struct ShortMultConfig {
     sel: Selector,
 }
 
-pub trait ShortMult<F: FieldExt + PrimeFieldBits>: Chip<F> {
+pub trait ShortMult<F: FieldExt>: Chip<F> {
     fn constrain(
         &self,
         layouter: &mut impl Layouter<F>,
@@ -41,13 +41,13 @@ pub trait ShortMult<F: FieldExt + PrimeFieldBits>: Chip<F> {
     ) -> Result<(Fs<F>, Number<F>), Error>;
 }
 
-pub struct ShortMultChip<Fp: FieldExt, F: FieldExt + PrimeFieldBits> {
+pub struct ShortMultChip<Fp: FieldExt, F: FieldExt> {
     config: ShortMultConfig,
     _marker: PhantomData<F>,
     __marker: PhantomData<Fp>,
 }
 
-impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> ShortMultChip<Fp, F> {
+impl<Fp: FieldExt, F: FieldExt> ShortMultChip<Fp, F> {
     pub fn construct(config: <Self as Chip<F>>::Config) -> Self {
         Self {
             config,
@@ -311,7 +311,7 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> ShortMultChip<Fp, F> {
     }
 }
 
-impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> Chip<F> for ShortMultChip<Fp, F> {
+impl<Fp: FieldExt, F: FieldExt> Chip<F> for ShortMultChip<Fp, F> {
     type Config = ShortMultConfig;
     type Loaded = ();
 
@@ -324,7 +324,7 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> Chip<F> for ShortMultChip<Fp, F
     }
 }
 
-impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> ShortMult<F> for ShortMultChip<Fp, F> {
+impl<Fp: FieldExt, F: FieldExt> ShortMult<F> for ShortMultChip<Fp, F> {
     fn constrain(
         &self,
         layouter: &mut impl Layouter<F>,
@@ -338,7 +338,7 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> ShortMult<F> for ShortMultChip<
 }
 
 #[derive(Default)]
-struct MyCircuit<F: FieldExt + PrimeFieldBits> {
+struct MyCircuit<F: FieldExt> {
     input: Option<F>,
 }
 
@@ -360,7 +360,7 @@ const L_RANGE: usize = 1 << CHUNCK_BITS;
 const R_RANGE: usize = 256 * 2 / CHUNCK_BITS;
 const S_RANGE: usize = 3;
 
-impl<F: FieldExt + PrimeFieldBits> Circuit<F> for MyCircuit<F> {
+impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
     // Since we are using a single chip for everything, we can just reuse its config.
     type Config = CircuitConfig;
     type FloorPlanner = SimpleFloorPlanner;

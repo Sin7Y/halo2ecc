@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 use crate::types::{Fs, FsAdvice};
 use ff::PrimeFieldBits;
 
-trait FPlus <F: FieldExt + PrimeFieldBits>: Chip<F> {
+trait FPlus <F: FieldExt>: Chip<F> {
     fn plus (
         &self,
         layouter: impl Layouter<F>,
@@ -17,20 +17,20 @@ trait FPlus <F: FieldExt + PrimeFieldBits>: Chip<F> {
     ) -> Result<FsAdvice<F>, Error>;
 }
 
-struct FPlusChip<F: FieldExt + PrimeFieldBits> {
+struct FPlusChip<F: FieldExt> {
     config: FPlusConfig<F>,
     _marker: PhantomData<F>,
 }
 
 #[derive(Clone, Debug)]
-struct FPlusConfig<F: FieldExt + PrimeFieldBits> {
+struct FPlusConfig<F: FieldExt> {
     /// Two fp numbers, three Columns each
     x: FsAdvice<F>,
     y: FsAdvice<F>,
     sel: Selector,
 }
 
-impl<F: FieldExt + PrimeFieldBits> FPlusChip<F> {
+impl<F: FieldExt> FPlusChip<F> {
     fn construct(config: <Self as Chip<F>>::Config) -> Self {
         Self {
             config,
@@ -61,7 +61,7 @@ impl<F: FieldExt + PrimeFieldBits> FPlusChip<F> {
     }
 }
 
-impl<F: FieldExt + PrimeFieldBits> Chip<F> for FPlusChip<F> {
+impl<F: FieldExt> Chip<F> for FPlusChip<F> {
     type Config = FPlusConfig<F>;
     type Loaded = ();
 
@@ -74,7 +74,7 @@ impl<F: FieldExt + PrimeFieldBits> Chip<F> for FPlusChip<F> {
     }
 }
 
-impl<F: FieldExt + PrimeFieldBits> FPlus<F> for FPlusChip<F> {
+impl<F: FieldExt> FPlus<F> for FPlusChip<F> {
     fn plus(
         &self,
         mut layouter: impl Layouter<F>,

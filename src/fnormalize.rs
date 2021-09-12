@@ -15,7 +15,7 @@ use crate::utils::*;
 use crate::decompose::{DecomposeChip};
 use ff::PrimeFieldBits;
 
-pub trait FNorm <Fp: FieldExt, F: FieldExt + PrimeFieldBits>: Chip<F> {
+pub trait FNorm <Fp: FieldExt, F: FieldExt>: Chip<F> {
     fn normalize (
         &self,
         layouter: &mut impl Layouter<F>,
@@ -24,7 +24,7 @@ pub trait FNorm <Fp: FieldExt, F: FieldExt + PrimeFieldBits>: Chip<F> {
     ) -> Result<(Fs<F>, Number<F>), Error>;
 }
 
-pub struct FNormChip<Fp: FieldExt, F: FieldExt + PrimeFieldBits> {
+pub struct FNormChip<Fp: FieldExt, F: FieldExt> {
     config: FNormConfig,
     decompose_chip: DecomposeChip<F>,
     _marker: PhantomData<Fp>,
@@ -41,7 +41,7 @@ pub struct FNormConfig {
     sel: Selector,
 }
 
-impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FNormChip<Fp, F> {
+impl<Fp: FieldExt, F: FieldExt> FNormChip<Fp, F> {
     pub fn construct(config: <Self as Chip<F>>::Config, decompose_chip:DecomposeChip<F>) -> Self {
         Self {
             config,
@@ -94,7 +94,7 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FNormChip<Fp, F> {
     }
 }
 
-impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> Chip<F> for FNormChip<Fp, F> {
+impl<Fp: FieldExt, F: FieldExt> Chip<F> for FNormChip<Fp, F> {
     type Config = FNormConfig;
     type Loaded = ();
 
@@ -107,7 +107,7 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> Chip<F> for FNormChip<Fp, F> {
     }
 }
 
-impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FNorm<Fp, F> for FNormChip<Fp, F> {
+impl<Fp: FieldExt, F: FieldExt> FNorm<Fp, F> for FNormChip<Fp, F> {
     fn normalize(
         &self,
         layouter: &mut impl Layouter<F>,

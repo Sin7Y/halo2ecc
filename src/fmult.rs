@@ -14,11 +14,11 @@ use crate::utils::*;
 use ff::PrimeFieldBits;
 use std::marker::PhantomData;
 
-trait FMult<Fp: FieldExt, F: FieldExt + PrimeFieldBits>: Chip<F> {
+trait FMult<Fp: FieldExt, F: FieldExt>: Chip<F> {
     fn mult(&self, layouter: &mut impl Layouter<F>, a: Fs<F>, b: Fs<F>) -> Result<Fs<F>, Error>;
 }
 
-struct FMultChip<Fp: FieldExt, F: FieldExt + PrimeFieldBits> {
+struct FMultChip<Fp: FieldExt, F: FieldExt> {
     config: FMultConfig<F>,
     smult_chip: ShortMultChip<Fp, F>,
     decom_chip: DecomposeChip<F>,
@@ -28,7 +28,7 @@ struct FMultChip<Fp: FieldExt, F: FieldExt + PrimeFieldBits> {
 }
 
 #[derive(Clone, Debug)]
-struct FMultConfig<F: FieldExt + PrimeFieldBits> {
+struct FMultConfig<F: FieldExt> {
     /// Two fp numbers, three Columns each
     x: FsAdvice<F>,
     y: FsAdvice<F>,
@@ -39,7 +39,7 @@ struct FMultConfig<F: FieldExt + PrimeFieldBits> {
     constant: Column<Fixed>,
 }
 
-impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FMultChip<Fp, F> {
+impl<Fp: FieldExt, F: FieldExt> FMultChip<Fp, F> {
     fn construct(
         config: <Self as Chip<F>>::Config,
         smult_chip: ShortMultChip<Fp, F>,
@@ -175,7 +175,7 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FMultChip<Fp, F> {
     }
 }
 
-impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> Chip<F> for FMultChip<Fp, F> {
+impl<Fp: FieldExt, F: FieldExt> Chip<F> for FMultChip<Fp, F> {
     type Config = FMultConfig<F>;
     type Loaded = ();
 
@@ -188,7 +188,7 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> Chip<F> for FMultChip<Fp, F> {
     }
 }
 
-impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FMultChip<Fp, F> {
+impl<Fp: FieldExt, F: FieldExt> FMultChip<Fp, F> {
     fn check_constant(
         &self,
         layouter: &mut impl Layouter<F>,
@@ -312,7 +312,7 @@ impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FMultChip<Fp, F> {
     }
 }
 
-impl<Fp: FieldExt, F: FieldExt + PrimeFieldBits> FMult<Fp, F> for FMultChip<Fp, F> {
+impl<Fp: FieldExt, F: FieldExt> FMult<Fp, F> for FMultChip<Fp, F> {
     fn mult(&self, layouter: &mut impl Layouter<F>, a: Fs<F>, b: Fs<F>) -> Result<Fs<F>, Error> {
         println!("a = {:?}", a.values);
         println!("b = {:?}", b.values);

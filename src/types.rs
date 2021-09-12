@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 use ff::PrimeFieldBits;
 
 #[derive(Clone, Debug, Copy)]
-pub struct FsAdvice<F: FieldExt + PrimeFieldBits> {
+pub struct FsAdvice<F: FieldExt> {
     pub advices: [Column<Advice>; 3],
     pub _marker: PhantomData<F>,
 }
@@ -20,6 +20,6 @@ pub struct Number<F: FieldExt> {
 }
 
 #[derive(Clone, Debug)]
-pub struct Fs<F:FieldExt + PrimeFieldBits> {
+pub struct Fs<F:FieldExt> {
     pub values: [Number<F>; 3],
 }

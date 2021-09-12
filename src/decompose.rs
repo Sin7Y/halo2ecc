@@ -17,7 +17,7 @@ use halo2::{
 };
 
 #[derive(Clone, Debug)]
-pub struct DecomposeConfig<F: FieldExt + PrimeFieldBits> {
+pub struct DecomposeConfig<F: FieldExt> {
     pub c: Column<Advice>,
     remainder: Column<Advice>,
     sum: Column<Advice>,
@@ -27,11 +27,11 @@ pub struct DecomposeConfig<F: FieldExt + PrimeFieldBits> {
     _marker: PhantomData<F>,
 }
 
-pub struct DecomposeChip<F: FieldExt + PrimeFieldBits> {
+pub struct DecomposeChip<F: FieldExt> {
     config: DecomposeConfig<F>,
 }
 
-impl<F: FieldExt + PrimeFieldBits> Chip<F> for DecomposeChip<F> {
+impl<F: FieldExt> Chip<F> for DecomposeChip<F> {
     type Config = DecomposeConfig<F>;
     type Loaded = ();
 
@@ -44,7 +44,7 @@ impl<F: FieldExt + PrimeFieldBits> Chip<F> for DecomposeChip<F> {
     }
 }
 
-impl<F: FieldExt + PrimeFieldBits> DecomposeChip<F> {
+impl<F: FieldExt> DecomposeChip<F> {
     pub fn constructor(config: DecomposeConfig<F>) -> Self {
         DecomposeChip { config }
     }

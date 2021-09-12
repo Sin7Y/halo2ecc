@@ -9,7 +9,7 @@ use crate::types::Number;
 use ff::PrimeFieldBits;
 use std::marker::PhantomData;
 
-pub trait Plus<F: FieldExt + PrimeFieldBits>: Chip<F> {
+pub trait Plus<F: FieldExt>: Chip<F> {
   fn plus(
     &self,
     layouter: &mut impl Layouter<F>,
@@ -18,7 +18,7 @@ pub trait Plus<F: FieldExt + PrimeFieldBits>: Chip<F> {
   ) -> Result<Number<F>, Error>;
 }
 
-pub struct PlusChip<F: FieldExt + PrimeFieldBits> {
+pub struct PlusChip<F: FieldExt> {
   config: PlusConfig,
   _marker: PhantomData<F>,
 }
@@ -31,7 +31,7 @@ pub struct PlusConfig {
   sel: Selector,
 }
 
-impl<F: FieldExt + PrimeFieldBits> PlusChip<F> {
+impl<F: FieldExt> PlusChip<F> {
   pub fn construct(config: <Self as Chip<F>>::Config) -> Self {
     Self {
       config,
@@ -62,7 +62,7 @@ impl<F: FieldExt + PrimeFieldBits> PlusChip<F> {
   }
 }
 
-impl<F: FieldExt + PrimeFieldBits> Chip<F> for PlusChip<F> {
+impl<F: FieldExt> Chip<F> for PlusChip<F> {
   type Config = PlusConfig;
   type Loaded = ();
 
@@ -75,7 +75,7 @@ impl<F: FieldExt + PrimeFieldBits> Chip<F> for PlusChip<F> {
   }
 }
 
-impl<F: FieldExt + PrimeFieldBits> Plus<F> for PlusChip<F> {
+impl<F: FieldExt> Plus<F> for PlusChip<F> {
   fn plus(
     &self,
     layouter: &mut impl Layouter<F>,
@@ -117,7 +117,7 @@ impl<F: FieldExt + PrimeFieldBits> Plus<F> for PlusChip<F> {
 }
 
 #[derive(Default)]
-struct MyCircuit<F: FieldExt + PrimeFieldBits> {
+struct MyCircuit<F: FieldExt> {
   x: Option<F>,
   y: Option<F>,
 }
@@ -132,7 +132,7 @@ pub struct CircuitConfig {
   testc: TestConfig,
 }
 
-impl<F: FieldExt + PrimeFieldBits> Circuit<F> for MyCircuit<F> {
+impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
   // Since we are using a single chip for everything, we can just reuse its config.
   type Config = CircuitConfig;
   type FloorPlanner = SimpleFloorPlanner;
