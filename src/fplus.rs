@@ -1,12 +1,11 @@
 use halo2::{
     arithmetic::FieldExt,
     circuit::{Chip, Layouter},
-    plonk::{Advice, Column, ConstraintSystem, Error, Instance, Selector},
+    plonk::{ConstraintSystem, Error, Selector},
 };
 
 use std::marker::PhantomData;
 use crate::types::{Fs, FsAdvice};
-use ff::PrimeFieldBits;
 
 trait FPlus <F: FieldExt>: Chip<F> {
     fn plus (
@@ -77,11 +76,11 @@ impl<F: FieldExt> Chip<F> for FPlusChip<F> {
 impl<F: FieldExt> FPlus<F> for FPlusChip<F> {
     fn plus(
         &self,
-        mut layouter: impl Layouter<F>,
-        a: Fs<F>,
-        b: Fs<F>,
+        mut _layouter: impl Layouter<F>,
+        _a: Fs<F>,
+        _b: Fs<F>,
     ) -> Result<FsAdvice<F>, Error> {
-        let mut out = None;
+        let out = None;
         Ok(out.unwrap())
     }
 }

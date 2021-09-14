@@ -1,19 +1,16 @@
 use halo2::{
     arithmetic::FieldExt,
-    circuit::{Chip, Layouter, Region, Cell},
+    circuit::{Chip, Layouter},
     plonk::{
         Advice, Column, ConstraintSystem,
-        Error, Instance,
-        Selector, Expression
+        Error, Selector
     },
     poly::Rotation,
 };
 
 use std::marker::PhantomData;
-use crate::types::{Fs, FsAdvice, Number};
-use crate::utils::*;
+use crate::types::{Fs, Number};
 use crate::decompose::{DecomposeChip};
-use ff::PrimeFieldBits;
 
 pub trait FNorm <Fp: FieldExt, F: FieldExt>: Chip<F> {
     fn normalize (
@@ -175,7 +172,7 @@ impl<Fp: FieldExt, F: FieldExt> FNorm<Fp, F> for FNormChip<Fp, F> {
                     0,
                     || Ok(carry_l.clone().value.unwrap()),
                 )?;
-                region.constrain_equal(carry_l.cell, c);
+                region.constrain_equal(carry_l.cell, c)?;
 
                 cell = Some(region.assign_advice(
                    || format!("sum_{}", 1),

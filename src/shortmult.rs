@@ -2,11 +2,8 @@ extern crate halo2;
 
 use crate::types::{Fs, Number};
 use crate::utils::*;
-use ff::PrimeFieldBits;
 use std::convert::TryInto;
 use std::marker::PhantomData;
-
-use crate::byteoptable::ShiftOpChip;
 
 use halo2::{
     arithmetic::FieldExt,
@@ -345,7 +342,7 @@ struct MyCircuit<F: FieldExt> {
 use crate::byteoptable::*;
 use crate::testchip::*;
 use halo2::circuit::SimpleFloorPlanner;
-use halo2::pasta::{Fp, Fq};
+use halo2::pasta::{Fq}; //FIXME usage of Fq is strange
 use halo2::plonk::Circuit;
 
 #[derive(Clone, Debug)]

@@ -189,9 +189,9 @@ impl<Fr: FieldExt, Fp: FieldExt, B: ByteOp<Fp>> ByteOpChip<Fr, Fp, B> {
                 region.constrain_equal(ol.cell, l)?;
                 println!("{:?}", ol.cell);
                 println!("{:?}", l);
-                //region.constrain_equal(or.cell, r)?;
-                //region.constrain_equal(os.cell, s)?;
-                //region.constrain_equal(oo.cell, o)?;
+                region.constrain_equal(or.cell, r)?;
+                region.constrain_equal(os.cell, s)?;
+                region.constrain_equal(oo.cell, o)?;
                 Ok(())
             },
         )

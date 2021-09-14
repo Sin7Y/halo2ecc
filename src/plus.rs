@@ -6,7 +6,6 @@ use halo2::{
 };
 
 use crate::types::Number;
-use ff::PrimeFieldBits;
 use std::marker::PhantomData;
 
 pub trait Plus<F: FieldExt>: Chip<F> {

@@ -1,11 +1,10 @@
 use halo2::{
     arithmetic::FieldExt,
-    plonk::{Advice, Column, ConstraintSystem},
+    plonk::{Advice, Column},
     circuit::{Cell}
 };
 
 use std::marker::PhantomData;
-use ff::PrimeFieldBits;
 
 #[derive(Clone, Debug, Copy)]
 pub struct FsAdvice<F: FieldExt> {

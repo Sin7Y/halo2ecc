@@ -3,16 +3,13 @@
 use crate::testchip::*;
 use crate::types::Number;
 use crate::utils::*;
-use ff::PrimeFieldBits;
-use std::convert::TryFrom;
 use std::marker::PhantomData;
 
 use halo2::{
     arithmetic::FieldExt,
-    circuit::{Chip, Layouter, Region, SimpleFloorPlanner},
-    dev::{MockProver, VerifyFailure},
+    circuit::{Chip, Layouter, SimpleFloorPlanner},
     pasta::Fp,
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Selector, TableColumn},
+    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Selector, TableColumn},
     poly::Rotation,
 };
 
@@ -242,9 +239,6 @@ impl Circuit<Fp> for MyCircuit {
 #[test]
 fn test1() {
     use halo2::dev::MockProver;
-    // The number of rows used in the constraint system matrix.
-    const PUB_INPUT: u64 = 3;
-
     let pub_inputs = vec![Fp::from(0x3456), Fp::from(0x12)];
 
     let circuit = MyCircuit {

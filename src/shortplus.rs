@@ -69,7 +69,7 @@ impl<F: FieldExt> ShortPlusChip<F> {
         let carry = meta.advice_column();
         let sum = meta.advice_column();
         let sel = meta.selector();
-        let mut c = 0;
+        // let mut c = 0;
 
         meta.enable_equality(carry.into());
         meta.enable_equality(sum.into());
@@ -112,7 +112,7 @@ impl<F: FieldExt> ShortPlusChip<F> {
                 let mut sum = F::from(0);
 
                 for (p, e) in inputs.iter().enumerate() {
-                    let sum_cell = region.assign_advice(
+                    let _sum_cell = region.assign_advice(
                         || format!("s_{}", pos),
                         config.sum,
                         p,
@@ -161,8 +161,8 @@ impl<F: FieldExt> ShortPlus<F> for ShortPlusChip<F> {
 
     fn expose_carry_remainder(
         &self,
-        layouter: &mut impl Layouter<F>,
-        remainder: Number<F>,
+        _layouter: &mut impl Layouter<F>,
+        _remainder: Number<F>,
     ) -> Result<(), Error> {
         // the final sum = carry * 2^d + remainder
         Ok(())
@@ -224,9 +224,7 @@ impl Circuit<Fp> for TestCircuit {
 fn circuit() {
     use halo2::dev::MockProver;
     // The number of rows used in the constraint system matrix.
-    const PUB_INPUT: u64 = 3;
-
-    let mut pub_inputs = vec![Fp::from(6)];
+    let pub_inputs = vec![Fp::from(6)];
 
     let circuit = TestCircuit {
         inputs: vec![Fp::from(1), Fp::from(2), Fp::from(3)]

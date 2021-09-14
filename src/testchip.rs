@@ -131,10 +131,7 @@ impl<F: FieldExt> TestChipTrait<F> for TestChip<F> {
 
 #[derive(Default)]
 struct MyCircuit<F: FieldExt> {
-    constant: F,
     a: Option<F>,
-    b: Option<F>,
-    c: Option<F>,
 }
 
 impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
@@ -157,7 +154,6 @@ impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
     ) -> Result<(), Error> {
         let field_chip = TestChip::<F>::construct(config);
         let a = field_chip.load_private(layouter.namespace(|| "load a"), self.a)?; // cursor 0
-        let b = field_chip.load_private(layouter.namespace(|| "load b"), self.b)?; // cursor 1
         field_chip.expose_public(layouter.namespace(|| "expose c"), a, 0)
     }
 }
@@ -172,17 +168,12 @@ fn test() {
     let k = 4;
 
     // Prepare the private and public inputs to the circuit!
-    let constant = Fp::from(7);
     let a = Fp::from(2);
-    let b = Fp::from(3);
     let c = Fp::from(2);
 
     // Instantiate the circuit with the private inputs.
     let circuit = MyCircuit {
-        constant,
         a: Some(a),
-        b: Some(b),
-        c: Some(c),
     };
 
     let mut public_inputs = vec![c];
