@@ -366,7 +366,7 @@ impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
         Self::default()
     }
     fn configure(cs: &mut ConstraintSystem<F>) -> Self::Config {
-        let bopc = ByteOpChip::<F, Fq, ShiftOp>::configure(cs);
+        let bopc = ByteOpChip::<Fq, F, ShiftOp<F>>::configure(cs);
         let smult =
             ShortMultChip::<Fq, F>::configure(cs, bopc.tbl_l, bopc.tbl_r, bopc.tbl_s, bopc.tbl_o);
         let testc = TestChip::configure(cs);
@@ -383,12 +383,9 @@ impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
 
         let z = test_chip.load_constant(layouter.namespace(|| "load"), F::zero())?;
 
-        let op_chip = ByteOpChip::<F, Fq, ShiftOp>::construct(config.bopc);
+        let op_chip = ByteOpChip::<Fq, F, ShiftOp<F>>::construct(config.bopc);
         op_chip.alloc_table(
-            layouter.namespace(|| "shift tbl"),
-            L_RANGE,
-            R_RANGE,
-            S_RANGE,
+            layouter.namespace(|| "shift tbl")
         )?;
 
         let smult_chip = ShortMultChip::<Fq, F>::construct(config.smult);

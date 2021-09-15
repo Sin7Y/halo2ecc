@@ -8,7 +8,6 @@ use halo2::{
     poly::Rotation,
 };
 
-use std::marker::PhantomData;
 use crate::types::{Number};
 use crate::utils::*;
 use crate::decompose::{DecomposeChip};
