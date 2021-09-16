@@ -12,7 +12,7 @@ use std::convert::TryInto;
 use std::marker::PhantomData;
 
 use crate::types::Number;
-use crate::utils::proj_f;
+use crate::utils::{proj_f, proj_byte, fp_modulus_on_big_uint};
 
 pub trait ByteOp<Fr: FieldExt, Fp: FieldExt> {
     fn bop(op1: usize, op2: usize, op3:usize) -> Fp;
@@ -119,7 +119,7 @@ impl<Fr: FieldExt, Fp: FieldExt, B: ByteOp<Fr, Fp>> ByteOpChip<Fr, Fp, B> {
                                 + r * B::s_range()
                                 + s;
                             let v = B::bop(l, r, s);
-                            //println!("l: {}, r: {} s:{} o:{:?}", l, r, s, repr.proj::<Fr>(s));
+                            //println!("l: {}, r: {} s:{} o:{:?}", l, r, s, v);
 
                             table.assign_cell(
                                 || "table_idx",
@@ -248,9 +248,10 @@ pub struct StrictLessOp<Fq: FieldExt> {
     m: PhantomData<Fq>,
 }
 
-impl<F:FieldExt> ByteOp<Fq,F> for StrictLessOp<Fq> {
+impl<Fq: FieldExt, F:FieldExt> ByteOp<Fq,F> for StrictLessOp<F> {
     fn bop(x: usize, shift: usize, hint: usize) -> F {
-        let b = 0xff; //FIXME: should get proj of q in shift
+        let modulus = fp_modulus_on_big_uint::<Fp>();
+        let b = proj_byte(&modulus, shift);
         if x < b {
             F::one()
         } else {
@@ -265,10 +266,10 @@ impl<F:FieldExt> ByteOp<Fq,F> for StrictLessOp<Fq> {
        1 << CHUNCK_BITS
     }
     fn r_range() -> usize {
-       32 as usize
+       32
     }
     fn s_range() -> usize {
-       2 as usize
+       2
     }
 }
 

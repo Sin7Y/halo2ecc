@@ -3,6 +3,7 @@
 use crate::testchip::*;
 use crate::types::Number;
 use crate::utils::*;
+use crate::byteoptable::*;
 use std::marker::PhantomData;
 use std::convert::TryInto;
 
@@ -15,7 +16,7 @@ use halo2::{
 };
 
 #[derive(Clone, Debug)]
-pub struct FRangeConfig<Fr: FieldExt, Fp: FieldExt> {
+pub struct FRangeConfig<Fp: FieldExt, Fr: FieldExt> {
     pub c: Column<Advice>,
     remainder: Column<Advice>,
     sless: Column<Advice>,
@@ -30,8 +31,8 @@ pub struct FRangeConfig<Fr: FieldExt, Fp: FieldExt> {
     _p_marker: PhantomData<Fp>
 }
 
-pub struct FRangeChip<Fr:FieldExt, Fp: FieldExt> {
-    config: FRangeConfig<Fr, Fp>,
+pub struct FRangeChip<Fp:FieldExt, Fr: FieldExt> {
+    config: FRangeConfig<Fp, Fr>,
 }
 
 impl<Fp:FieldExt, F: FieldExt> Chip<F> for FRangeChip<Fp, F> {
@@ -68,7 +69,7 @@ impl<Fp: FieldExt, F: FieldExt> FRangeChip<Fp, F> {
     }
 
     pub fn configure(
-        cs: &mut ConstraintSystem<Fp>,
+        cs: &mut ConstraintSystem<F>,
         tbl_v: TableColumn, //domain of table
         tbl_s: TableColumn, //shift
         tbl_i: TableColumn, //strict less
@@ -143,7 +144,7 @@ impl<Fp: FieldExt, F: FieldExt> FRangeChip<Fp, F> {
         }
     }
 
-    pub fn decompose(
+    pub fn check (
         &self,
         layouter: &mut impl Layouter<F>,
         input: Number<F>,
@@ -229,58 +230,57 @@ impl<Fp: FieldExt, F: FieldExt> FRangeChip<Fp, F> {
 }
 
 #[derive(Clone, Default)]
-struct MyCircuit {
-    input: Fp,
+struct MyCircuit<F: FieldExt> {
+    input: F,
     chunk_size: usize,
 }
 
 #[derive(Clone, Debug)]
-struct TestCircConfig {
-    pconfig: FRangeConfig<Fq, Fp>,
-    tconfig: TestConfig,
+struct CircuitConfig<F: FieldExt> {
+    rangec: FRangeConfig<Fq, F>,
+    bopc: ByteOpChipConfig,
+    testc: TestConfig,
 }
 
-/*
-
-impl Circuit<Fp> for MyCircuit {
-    type Config = TestCircConfig;
+impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
+    type Config = CircuitConfig<F>;
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
         Self::default()
     }
 
-    fn configure(cs: &mut ConstraintSystem<Fp>) -> Self::Config {
-        let table_col = cs.lookup_table_column();
-        println!("configure done!");
-        TestCircConfig {
-            pconfig: FRangeChip::<Fp>::configure(cs, table_col),
-            tconfig: TestChip::<Fp>::configure(cs),
-        }
+    fn configure(cs: &mut ConstraintSystem<F>) -> Self::Config {
+        let bopc = ByteOpChip::<Fq, F, StrictLessOp<F>>::configure(cs);
+        let rangec =
+            FRangeChip::<Fq, F>::configure(cs, bopc.tbl_l, bopc.tbl_r, bopc.tbl_s, bopc.tbl_o);
+        let testc = TestChip::configure(cs);
+        return CircuitConfig { rangec, bopc, testc };
     }
 
     fn synthesize(
         &self,
         config: Self::Config,
-        mut layouter: impl Layouter<Fp>,
+        mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         println!("Start synthesize ...");
-        let test_chip = TestChip::<Fp>::construct(config.tconfig);
+        let test_chip = TestChip::<F>::construct(config.testc);
         let input_cell = test_chip.load_private(layouter.namespace(|| "cell"), Some(self.input))?;
-        let chip = FRangeChip::<Fp>::constructor(config.pconfig);
-        println!("loading range table ...");
 
-        chip.load_range_table(&mut layouter)?;
-        println!("assign region ...");
-        let (sum, carry) = chip.decompose(&mut layouter, input_cell.clone(), self.chunk_size)?;
-        test_chip.expose_public(layouter.namespace(|| "out"), sum, 0)?;
-        test_chip.expose_public(layouter.namespace(|| "out"), carry, 1)?;
+        let op_chip = ByteOpChip::<Fq, F, StrictLessOp<F>>::construct(config.bopc);
+        op_chip.alloc_table(
+            layouter.namespace(|| "less tbl")
+        )?;
+/*
+        let chip = FRangeChip::<Fq,F>::constructor(config.rangec);
+        let (sum, carry) = chip.check(&mut layouter, input_cell.clone(), 0, 0, self.chunk_size)?;
+*/
         Ok(())
     }
 }
 
 #[test]
-fn test1() {
+fn frange_test1() {
     use halo2::dev::MockProver;
     let pub_inputs = vec![Fp::from(0x3456), Fp::from(0x12)];
 
@@ -288,7 +288,7 @@ fn test1() {
         input: Fp::from(0x123456),
         chunk_size: 2,
     };
-    let prover = MockProver::run(9, &circuit, vec![pub_inputs]).unwrap();
+    let prover = MockProver::run(15, &circuit, vec![pub_inputs]).unwrap();
     let presult = prover.verify();
     println!("Error {:?}", presult);
 
@@ -296,7 +296,7 @@ fn test1() {
 }
 
 #[test]
-fn test2() {
+fn frange_test2() {
     use halo2::dev::MockProver;
     // The number of rows used in the constraint system matrix.
     const PUB_INPUT: u64 = 3;
@@ -307,10 +307,9 @@ fn test2() {
         input: Fp::from(0x2),
         chunk_size: 10,
     };
-    let prover = MockProver::run(9, &circuit, vec![pub_inputs]).unwrap();
+    let prover = MockProver::run(15, &circuit, vec![pub_inputs]).unwrap();
     let presult = prover.verify();
     println!("Error {:?}", presult);
 
     assert!(presult.is_ok());
 }
-*/
