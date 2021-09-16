@@ -2,7 +2,7 @@ use halo2::{
     arithmetic::FieldExt,
     circuit::{Chip, Layouter},
     plonk::{
-        Advice, Column, ConstraintSystem,
+        Advice, Column, ConstraintSystem, Fixed,
         Error, Selector
     },
     poly::Rotation,
@@ -30,11 +30,12 @@ pub struct FNormChip<Fp: FieldExt, F: FieldExt> {
 #[derive(Clone, Debug)]
 pub struct FNormConfig {
     /// Two fp numbers, three Columns each
-    op1: Column<Advice>,
-    op2: Column<Advice>,
+    n: Column<Advice>,
+    x: Column<Advice>,
+    p: Column<Fixed>,
+    d: Column<Advice>,
     carry: Column<Advice>,
     sum: Column<Advice>,
-    remainder: Column<Advice>,
     sel: Selector,
 }
 
@@ -50,17 +51,19 @@ impl<Fp: FieldExt, F: FieldExt> FNormChip<Fp, F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
     ) -> <Self as Chip<F>>::Config {
-        let op1 = meta.advice_column();
-        let op2 = meta.advice_column();
+        // x = n + p * d
+        let n = meta.advice_column();
+        let x = meta.advice_column();
+        let p = meta.fixed_column();
+        let d = meta.advice_column();
         let carry = meta.advice_column();
         let sum = meta.advice_column();
-        let remainder = meta.advice_column();
 
-        meta.enable_equality(op1.into());
-        meta.enable_equality(op2.into());
+        meta.enable_equality(n.into());
+        meta.enable_equality(x.into());
+        meta.enable_equality(d.into());
         meta.enable_equality(carry.into());
         meta.enable_equality(sum.into());
-        meta.enable_equality(remainder.into());
 
         let sel = meta.selector();
 
@@ -68,24 +71,26 @@ impl<Fp: FieldExt, F: FieldExt> FNormChip<Fp, F> {
             let s = meta.query_selector(sel);
 
             // pure sum and carry arithment
-            // | op1 | op2 | carry | sum | remainder |
-            // | x0  | y0  |   0   | x0 + y0 | v0
-            // | x1  | y1  |  c0   | x1 + y1 + c0 | v_1 |
-            // | x2  | y2  |  c1   | x2 + y2 + c1 | v_2 |
-            // | 0   | 0   |  c2   |     |      |
-            let op1_cur = meta.query_advice(op1, Rotation::cur());
-            let op2_cur = meta.query_advice(op2, Rotation::cur());
+            // x  | n   | p   | carry | d | sum |
+            // x0 | n0  | p0  |   0   | d | r0 + y0 |
+            // x1 | n1  | p1  |  c0   | d | r1 + y1 + c0 |
+            // x2 | n2  | p2  |  c1   | d | x2 + y2 + c1 |
+            let n_cur = meta.query_advice(n, Rotation::cur());
+            let x_cur = meta.query_fixed(x, Rotation::cur());
+            let p_cur = meta.query_fixed(p, Rotation::cur());
             let carry_cur = meta.query_advice(carry, Rotation::cur());
             let sum_cur = meta.query_advice(sum, Rotation::cur());
-            vec![ s * (op1_cur + op2_cur +carry_cur - sum_cur) ]
+            let d_cur = meta.query_advice(d, Rotation::cur());
+            let d_next = meta.query_advice(d, Rotation::next());
+            vec![ s * (n_cur + p_cur * d + carry_cur - sum_cur)]
         });
 
         FNormConfig {
-            op1,
-            op2,
+            n,
+            x,
+            d,
             carry,
             sum,
-            remainder,
             sel,
         }
     }
@@ -109,7 +114,6 @@ impl<Fp: FieldExt, F: FieldExt> FNorm<Fp, F> for FNormChip<Fp, F> {
         &self,
         layouter: &mut impl Layouter<F>,
         x: Fs<F>,
-        y: Fs<F>,
     ) -> Result<(Fs<F>, Number<F>), Error> {
         let config = self.config();
         let xh = x.clone().values[2].value.unwrap();
@@ -148,7 +152,7 @@ impl<Fp: FieldExt, F: FieldExt> FNorm<Fp, F> for FNormChip<Fp, F> {
                     || Ok(x.clone().values[0].value.unwrap()),
                 )?;
 
-                region.assign_advice(
+                region.assign_fixed(
                     || format!("op_{}", 0),
                     config.op2,
                     0,
@@ -188,7 +192,7 @@ impl<Fp: FieldExt, F: FieldExt> FNorm<Fp, F> for FNormChip<Fp, F> {
                     || Ok(x.clone().values[1].value.unwrap()),
                 )?;
 
-                region.assign_advice(
+                region.assign_fixed(
                     || format!("op2_{}", 1),
                     config.op2,
                     0,
@@ -226,7 +230,7 @@ impl<Fp: FieldExt, F: FieldExt> FNorm<Fp, F> for FNormChip<Fp, F> {
                     || Ok(x.clone().values[2].value.unwrap()),
                 )?;
 
-                region.assign_advice(
+                region.assign_fixed(
                     || format!("op_{}", 2),
                     config.op2,
                     0,
