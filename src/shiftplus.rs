@@ -352,11 +352,6 @@ pub struct CircuitConfig {
     testc: TestConfig,
 }
 
-const CHUNCK_BITS: usize = 8;
-const L_RANGE: usize = 1 << CHUNCK_BITS;
-const R_RANGE: usize = 256 * 2 / CHUNCK_BITS;
-const S_RANGE: usize = 3;
-
 impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
     // Since we are using a single chip for everything, we can just reuse its config.
     type Config = CircuitConfig;

@@ -4,35 +4,38 @@ use crate::testchip::*;
 use crate::types::Number;
 use crate::utils::*;
 use std::marker::PhantomData;
+use std::convert::TryInto;
 
 use halo2::{
     arithmetic::FieldExt,
     circuit::{Chip, Layouter, SimpleFloorPlanner},
-    pasta::Fp,
+    pasta::{Fq, Fp},
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Selector, TableColumn},
     poly::Rotation,
 };
 
 #[derive(Clone, Debug)]
-pub struct FRangeConfig<F: FieldExt> {
+pub struct FRangeConfig<Fr: FieldExt, Fp: FieldExt> {
     pub c: Column<Advice>,
     remainder: Column<Advice>,
-    sum: Column<Advice>,
-    b: Column<Advice>,
+    sless: Column<Advice>,
+    hint: Column<Advice>,
+    shift: Column<Advice>,
     s: Selector,
     tbl_v: TableColumn,
     tbl_s: TableColumn,
     tbl_i: TableColumn,
     tbl_o: TableColumn,
-    _marker: PhantomData<F>,
+    _r_marker: PhantomData<Fr>,
+    _p_marker: PhantomData<Fp>
 }
 
-pub struct FRangeChip<F: FieldExt> {
-    config: FRangeConfig<F>,
+pub struct FRangeChip<Fr:FieldExt, Fp: FieldExt> {
+    config: FRangeConfig<Fr, Fp>,
 }
 
-impl<F: FieldExt> Chip<F> for FRangeChip<F> {
-    type Config = FRangeConfig<F>;
+impl<Fp:FieldExt, F: FieldExt> Chip<F> for FRangeChip<Fp, F> {
+    type Config = FRangeConfig<Fp, F>;
     type Loaded = ();
 
     fn config(&self) -> &Self::Config {
@@ -44,18 +47,20 @@ impl<F: FieldExt> Chip<F> for FRangeChip<F> {
     }
 }
 
-impl<F: FieldExt> FRangeChip<F> {
-    pub fn constructor(config: FRangeConfig<F>) -> Self {
+impl<Fp: FieldExt, F: FieldExt> FRangeChip<Fp, F> {
+    pub fn constructor(config: FRangeConfig<Fp, F>) -> Self {
         FRangeChip { config }
     }
 
-    fn get_sless_hint (&self, last_is_sless:u64, rem:u64, shift:usize) -> u64 {
+    fn get_sless_hint (&self, last_is_sless:usize, rem:usize, shift:usize) -> usize {
         let config = self.config();
-        if (rem < self.chuncks[usize]) {
-            1 as u64
+        let modulus = fp_modulus_on_big_uint::<Fp>();
+        let chunk = proj_byte(&modulus, shift);
+        if (rem < chunk) {
+            1 as usize
         } else {
-            if (rem > self.chunks[usize]) {
-                0 as u64
+            if (rem > chunk) {
+                0 as usize
             } else {
                 last_is_sless
             }
@@ -68,7 +73,7 @@ impl<F: FieldExt> FRangeChip<F> {
         tbl_s: TableColumn, //shift
         tbl_i: TableColumn, //strict less
         tbl_o: TableColumn, //lookup output
-    ) -> FRangeConfig<F> {
+    ) -> FRangeConfig<Fp, F> {
         let c = cs.advice_column();
         let r = cs.advice_column();
         let hint = cs.advice_column();
@@ -78,13 +83,14 @@ impl<F: FieldExt> FRangeChip<F> {
 
         cs.enable_equality(c.into());
         cs.enable_equality(r.into());
-        cs.enable_equality(sum.into());
+        cs.enable_equality(sless.into());
 
         // Make sure the remainder does not overflow so that it
         // equals a range check of each remainder
         cs.lookup(|meta| {
             let r_cur = meta.query_advice(r, Rotation::cur());
-            let hint_cur = meta.query_advice(shift, Rotation::cur());
+            let hint_cur = meta.query_advice(hint, Rotation::cur());
+            let shift_cur = meta.query_advice(shift, Rotation::cur());
             let sless_cur = meta.query_advice(sless, Rotation::cur());
             vec![(r_cur, tbl_v),
                 (hint_cur, tbl_i),
@@ -115,9 +121,8 @@ impl<F: FieldExt> FRangeChip<F> {
 
             let v = c_cur.clone() - c_next * to_expr(256);
             vec![
-                s.clone() * (sum_next - sum_cur - (r_cur.clone() * b_cur.clone())),
-                s.clone() * (shift_next - shift_cur - 1),
-                s.clone() * (hint_next - (sless_cur + (shfit * to_expr(2)))),
+                s.clone() * (shift_next - shift_cur - to_expr(1)),
+                s.clone() * (hint_next - sless_cur),
                 s.clone() * (r_cur - v),
             ]
         });
@@ -133,7 +138,8 @@ impl<F: FieldExt> FRangeChip<F> {
             tbl_s,
             tbl_i,
             tbl_o,
-            _marker: PhantomData,
+            _r_marker: PhantomData,
+            _p_marker: PhantomData,
         }
     }
 
@@ -141,7 +147,7 @@ impl<F: FieldExt> FRangeChip<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         input: Number<F>,
-        sless: F,
+        sless: usize,
         start: usize,
         num_chunks: usize,
     ) -> Result<(Number<F>, Number<F>), Error> {
@@ -157,7 +163,7 @@ impl<F: FieldExt> FRangeChip<F> {
                 }
 
                 let bytes = input.value.unwrap().to_bytes();
-                let mut shift = F::from_u64(start.try_into().unwrap());
+                let mut shift = start;
                 let mut c = input.clone().value.unwrap();
                 let mut hint = sless;
 
@@ -176,7 +182,11 @@ impl<F: FieldExt> FRangeChip<F> {
                         region.constrain_equal(input.cell, c_cell)?;
                     }
 
-                    region.assign_advice(|| format!("shift_{:?}", row), config.shift, row, || Ok(shift))?;
+                    region.assign_advice(|| format!("shift_{:?}", row),
+                        config.shift,
+                        row,
+                        || Ok(F::from_u64(shift.try_into().unwrap()))
+                    )?;
 
                     region.assign_advice(
                         || format!("rem_{:?}", row),
@@ -189,19 +199,22 @@ impl<F: FieldExt> FRangeChip<F> {
                         || format!("hint_{:?}", row),
                         config.hint,
                         row,
-                        || Ok(sless),
+                        || Ok(F::from_u64(sless.try_into().unwrap())),
                     )?;
 
-                    let sless = self.get_sless_hint(sless, bytes[row].into(), shift);
+                    let hint = self.get_sless_hint(hint, bytes[row].into(), shift);
                     let sless_cell = region.assign_advice(
                         || format!("sless_{:?}", row),
                         config.sless,
                         row,
-                        || Ok(sless),
+                        || Ok(F::from_u64(hint.try_into().unwrap())),
                     )?;
 
                     if row == num_chunks {
-                        output = Some(Number::<F>{cell: sless_cell, value: Some(sless)});
+                        output = Some(Number::<F>{
+                            cell: sless_cell,
+                            value: Some(F::from_u64(hint.try_into().unwrap()))
+                        });
                         carry = Some(Number::<F>{cell: c_cell, value: Some(c)});
                     }
                     shift += 1;
@@ -223,9 +236,11 @@ struct MyCircuit {
 
 #[derive(Clone, Debug)]
 struct TestCircConfig {
-    pconfig: FRangeConfig<Fp>,
+    pconfig: FRangeConfig<Fq, Fp>,
     tconfig: TestConfig,
 }
+
+/*
 
 impl Circuit<Fp> for MyCircuit {
     type Config = TestCircConfig;
@@ -298,3 +313,4 @@ fn test2() {
 
     assert!(presult.is_ok());
 }
+*/

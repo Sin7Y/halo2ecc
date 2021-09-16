@@ -61,6 +61,16 @@ pub fn proj_f<Fp: FieldExt, F: FieldExt>(x: Fp, i: usize) -> F {
     return proj(Vec::from(x.to_bytes()), i);
 }
 
+pub fn proj_byte(x: &BigUint, i: usize) -> usize {
+    let mut bytes = Vec::from(x.to_bytes_le());
+    bytes.resize(32, 0u8);
+    if (i >= 32) {
+        return 0;
+    } else {
+        return bytes[i].into();
+    }
+}
+
 pub fn proj_big_uint<F: FieldExt>(x: &BigUint, i: usize) -> F {
     return proj(Vec::from(x.to_bytes_le()), i);
 }

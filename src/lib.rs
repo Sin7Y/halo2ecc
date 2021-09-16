@@ -3,6 +3,7 @@ mod utils;
 mod testchip;
 mod decompose;
 mod range;
+mod frange;
 mod shiftplus;
 mod fnormalize;
 mod fplus;
