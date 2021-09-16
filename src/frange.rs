@@ -1,7 +1,7 @@
 // FRange an Fp element into bitwise byte chucks
 
 use crate::testchip::*;
-use crate::types::Number;
+use crate::types::{Number, Fs};
 use crate::utils::*;
 use crate::byteoptable::*;
 use std::marker::PhantomData;
@@ -144,6 +144,18 @@ impl<Fp: FieldExt, F: FieldExt> FRangeChip<Fp, F> {
         }
     }
 
+    pub fn frange_check(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        input: Fs<F>,
+    ) -> Result<(), Error> {
+        let (sless0, carry0) = self.check (layouter, input.values[0], 0, 0, 10)?;
+        let (sless1, carry1) = self.check (layouter, input.values[0], 0, 10, 10)?;
+        let (sless2, carry2) = self.check (layouter, input.values[0], 0, 20, 12)?;
+        Ok(())
+    }
+
+
     pub fn check (
         &self,
         layouter: &mut impl Layouter<F>,
@@ -271,10 +283,11 @@ impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
         op_chip.alloc_table(
             layouter.namespace(|| "less tbl")
         )?;
-/*
+
         let chip = FRangeChip::<Fq,F>::constructor(config.rangec);
-        let (sum, carry) = chip.check(&mut layouter, input_cell.clone(), 0, 0, self.chunk_size)?;
-*/
+        let (sless, carry) = chip.check(&mut layouter, input_cell.clone(), 0, 0, self.chunk_size)?;
+        test_chip.expose_public(layouter.namespace(|| "sless"), sless.clone(), 0)?;
+        test_chip.expose_public(layouter.namespace(|| "carry"), carry.clone(), 1)?;
         Ok(())
     }
 }
@@ -282,31 +295,21 @@ impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
 #[test]
 fn frange_test1() {
     use halo2::dev::MockProver;
-    let pub_inputs = vec![Fp::from(0x3456), Fp::from(0x12)];
+
+    let q_modulus = fp_modulus_on_big_uint::<Fq>();
+
+    let q_minus_1 = q_modulus - 1u64;
+
+    let x0 = proj_big_uint::<Fp> (&q_minus_1, 0);
+    let x1 = proj_big_uint::<Fp> (&q_minus_1, 1);
+    let x2 = proj_big_uint::<Fp> (&q_minus_1, 2);
 
     let circuit = MyCircuit {
-        input: Fp::from(0x123456),
-        chunk_size: 2,
-    };
-    let prover = MockProver::run(15, &circuit, vec![pub_inputs]).unwrap();
-    let presult = prover.verify();
-    println!("Error {:?}", presult);
-
-    assert!(presult.is_ok());
-}
-
-#[test]
-fn frange_test2() {
-    use halo2::dev::MockProver;
-    // The number of rows used in the constraint system matrix.
-    const PUB_INPUT: u64 = 3;
-
-    let pub_inputs = vec![Fp::from(0x2), Fp::from(0x0)];
-
-    let circuit = MyCircuit {
-        input: Fp::from(0x2),
+        input: x0,
         chunk_size: 10,
     };
+
+    let pub_inputs = vec![Fp::one(), Fp::zero()];
     let prover = MockProver::run(15, &circuit, vec![pub_inputs]).unwrap();
     let presult = prover.verify();
     println!("Error {:?}", presult);
