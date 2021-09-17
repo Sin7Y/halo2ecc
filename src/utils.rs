@@ -75,23 +75,23 @@ pub fn proj_big_uint<F: FieldExt>(x: &BigUint, i: usize) -> F {
     return proj(Vec::from(x.to_bytes_le()), i);
 }
 
-pub fn big_unit_from_f<F: FieldExt>(a: F) -> BigUint {
+pub fn big_uint_from_f<F: FieldExt>(a: F) -> BigUint {
     return BigUint::from_bytes_le(&a.to_bytes());
 }
 
 pub fn fp_modulus_on_big_uint<Fp: FieldExt>() -> BigUint {
     let f_max = Fp::zero() - Fp::one();
-    let modulus = big_unit_from_f(f_max) + 1u64;
+    let modulus = big_uint_from_f(f_max) + 1u64;
     return modulus;
 }
 
-pub fn f_from_big_unit<F: FieldExt>(x: &BigUint) -> F {
+pub fn f_from_big_uint<F: FieldExt>(x: &BigUint) -> F {
     let mut bytes = x.to_bytes_le();
     bytes.resize(32, 0u8);
     return F::from_bytes(&bytes.try_into().unwrap()).unwrap();
 }
 
-pub fn fp_on_fr_from_big_unit<F: FieldExt>(x: BigUint) -> [F; 3] {
+pub fn fp_on_fr_from_big_uint<F: FieldExt>(x: BigUint) -> [F; 3] {
     let mut ret = [F::zero(); 3];
     for i in 0..3 {
         ret[i] = proj_big_uint(&x, i);
@@ -101,7 +101,7 @@ pub fn fp_on_fr_from_big_unit<F: FieldExt>(x: BigUint) -> [F; 3] {
 
 pub fn fp_modulus_on_fr<Fp: FieldExt, F: FieldExt>() -> [F; 3] {
     let modulus = fp_modulus_on_big_uint::<Fp>();
-    return fp_on_fr_from_big_unit(modulus);
+    return fp_on_fr_from_big_uint(modulus);
 }
 
 pub fn get_shift_lookup<F: FieldExt>(x: F, shift: u64) -> F {

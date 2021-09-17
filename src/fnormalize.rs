@@ -10,6 +10,7 @@ use halo2::{
 
 use std::marker::PhantomData;
 use crate::types::{Fs, Number};
+use crate::utils::*;
 use crate::decompose::{DecomposeChip};
 
 pub trait FNorm <Fp: FieldExt, F: FieldExt>: Chip<F> {
@@ -17,8 +18,7 @@ pub trait FNorm <Fp: FieldExt, F: FieldExt>: Chip<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         x: Fs<F>,
-        y: Fs<F>,
-    ) -> Result<(Fs<F>, Number<F>), Error>;
+    ) -> Result<Fs<F>, Error>;
 }
 
 pub struct FNormChip<Fp: FieldExt, F: FieldExt> {
@@ -76,19 +76,19 @@ impl<Fp: FieldExt, F: FieldExt> FNormChip<Fp, F> {
             // x1 | n1  | p1  |  c0   | d | r1 + y1 + c0 |
             // x2 | n2  | p2  |  c1   | d | x2 + y2 + c1 |
             let n_cur = meta.query_advice(n, Rotation::cur());
-            let x_cur = meta.query_fixed(x, Rotation::cur());
+            let x_cur = meta.query_advice(x, Rotation::cur());
             let p_cur = meta.query_fixed(p, Rotation::cur());
             let carry_cur = meta.query_advice(carry, Rotation::cur());
             let sum_cur = meta.query_advice(sum, Rotation::cur());
             let d_cur = meta.query_advice(d, Rotation::cur());
-            let d_next = meta.query_advice(d, Rotation::next());
-            vec![ s * (n_cur + p_cur * d + carry_cur - sum_cur)]
+            vec![ s * (n_cur + p_cur * d_cur + carry_cur - sum_cur)]
         });
 
         FNormConfig {
             n,
             x,
             d,
+            p,
             carry,
             sum,
             sel,
@@ -114,15 +114,22 @@ impl<Fp: FieldExt, F: FieldExt> FNorm<Fp, F> for FNormChip<Fp, F> {
         &self,
         layouter: &mut impl Layouter<F>,
         x: Fs<F>,
-    ) -> Result<(Fs<F>, Number<F>), Error> {
+    ) -> Result<(Fs<F>), Error> {
         let config = self.config();
         let xh = x.clone().values[2].value.unwrap();
         let xm = x.clone().values[1].value.unwrap();
         let xl = x.clone().values[0].value.unwrap();
 
-        let yh = y.clone().values[2].value.unwrap();
-        let ym = y.clone().values[1].value.unwrap();
-        let yl = y.clone().values[0].value.unwrap();
+        let x_b = fp_on_fr_to_big_uint::<F>([xl,xm,xh]);
+        let p_b = fp_modulus_on_big_uint::<Fp>();
+        let [pl, pm, ph] = fp_on_fr_from_big_uint::<F>(p_b.clone());
+
+        let n_b = if x_b.clone() >= p_b.clone()
+            { x_b.clone() - p_b.clone() } else { x_b.clone() };
+        let d = if x_b >= p_b { F::one() } else { F::zero() };
+
+
+        let [nl, nm, nh] = fp_on_fr_from_big_uint::<F>(n_b);
 
         let mut out = None;
         let mut cell = None;
@@ -132,40 +139,50 @@ impl<Fp: FieldExt, F: FieldExt> FNorm<Fp, F> for FNormChip<Fp, F> {
             |mut region| {
                 config.sel.enable(&mut region, 0)?;
                 region.assign_advice(
-                    || format!("carry_{}", 0),
+                    || format!("c0"),
                     config.carry,
                     0,
                     || Ok(F::zero()),
+                )?;
+
+                region.assign_advice(
+                    || format!("d0"),
+                    config.d,
+                    0,
+                    || Ok(d),
                 )?;
 
                 cell = Some (region.assign_advice(
                     || format!("sum_{}", 0),
                     config.sum,
                     0,
-                    || Ok(xl + yl),
+                    || Ok(nl + pl * d),
                 )?);
 
                 region.assign_advice(
-                    || format!("op_{}", 0),
-                    config.op1,
+                    || format!("x0"),
+                    config.x,
                     0,
                     || Ok(x.clone().values[0].value.unwrap()),
                 )?;
 
                 region.assign_fixed(
-                    || format!("op_{}", 0),
-                    config.op2,
+                    || format!("p0"),
+                    config.p,
                     0,
-                    || Ok(y.clone().values[0].value.unwrap()),
+                    || Ok(pl),
                 )?;
                 Ok(())
             },
         )?;
 
-        let (sum_l, carry_l) =
-            self.decompose_chip.decompose(layouter, Number::<F>{cell: cell.unwrap(), value: Some(xl+yl)}, 10)?;
+        let (nl_cell, carry_l) = self.decompose_chip.decompose(
+            layouter,
+            Number::<F>{cell: cell.unwrap(), value: Some(nl + pl * d)},
+            10
+        )?;
 
-        let vm = xm + ym + carry_l.clone().value.unwrap();
+        let vm = nm + (pm*d) + carry_l.clone().value.unwrap();
         layouter.assign_region(
             || "load row1",
             |mut region| {
@@ -178,72 +195,88 @@ impl<Fp: FieldExt, F: FieldExt> FNorm<Fp, F> for FNormChip<Fp, F> {
                 )?;
                 region.constrain_equal(carry_l.cell, c)?;
 
+                region.assign_advice(
+                    || format!("d0"),
+                    config.d,
+                    0,
+                    || Ok(d),
+                )?;
+
                 cell = Some(region.assign_advice(
-                   || format!("sum_{}", 1),
+                   || format!("sum1"),
                    config.sum,
                    0,
                    || Ok(vm),
                 )?);
 
                 region.assign_advice(
-                    || format!("op1_{}", 1),
-                    config.op1,
+                    || format!("x1"),
+                    config.x,
                     0,
                     || Ok(x.clone().values[1].value.unwrap()),
                 )?;
 
                 region.assign_fixed(
-                    || format!("op2_{}", 1),
-                    config.op2,
+                    || format!("p1"),
+                    config.p,
                     0,
-                    || Ok(y.clone().values[1].value.unwrap()),
+                    || Ok(pm),
                 )?;
                 Ok(())
             },
         )?;
 
-        let (sum_m, carry_m) =
-            self.decompose_chip.decompose(layouter, Number::<F>{cell: cell.unwrap(), value: Some(vm) }, 10)?;
+        let (nm_cell, carry_m) = self.decompose_chip.decompose(
+            layouter,
+            Number::<F>{cell: cell.unwrap(), value: Some(vm)},
+            10
+        )?;
 
-        let vh = xh + yh + carry_m.clone().value.unwrap();
+        let vh = nh + ph + carry_m.clone().value.unwrap();
         layouter.assign_region(
             || "load row2",
             |mut region| {
                 config.sel.enable(&mut region, 0)?;
                 region.assign_advice(
-                    || format!("carry_{}", 2),
+                    || format!("c2"),
                     config.carry,
                     0,
                     || Ok(carry_m.clone().value.unwrap()),
                 )?;
 
                 cell = Some (region.assign_advice(
-                    || format!("sum_{}", 2),
+                    || format!("sum2"),
                     config.sum,
                     0,
                     || Ok(vh),
                 )?);
+
                 region.assign_advice(
-                    || format!("op_{}", 2),
-                    config.op1,
+                    || format!("d0"),
+                    config.d,
+                    0,
+                    || Ok(d),
+                )?;
+
+                region.assign_advice(
+                    || format!("x2"),
+                    config.x,
                     0,
                     || Ok(x.clone().values[2].value.unwrap()),
                 )?;
 
                 region.assign_fixed(
-                    || format!("op_{}", 2),
-                    config.op2,
+                    || format!("p2"),
+                    config.p,
                     0,
-                    || Ok(y.clone().values[2].value.unwrap()),
+                    || Ok(ph),
                 )?;
                 Ok(())
             },
         )?;
-        let (sum_h, carry_h) =
-            self.decompose_chip.decompose(layouter, Number::<F>{cell: cell.unwrap(), value: Some(vh) }, 16)?;
-
-        out = Some (Fs::<F> {values: [sum_l, sum_m, sum_h]});
-        Ok((out.unwrap(), carry_h))
+        let nh_cell = Number::<F> { cell: cell.unwrap(), value:Some(vh) };
+        out = Some (Fs::<F> {values: [nl_cell, nm_cell, nh_cell]});
+        Ok(out.unwrap())
     }
 }
 
@@ -258,10 +291,6 @@ struct MyCircuit {
     x0: Fp,
     x1: Fp,
     x2: Fp,
-    o0: Fp,
-    o1: Fp,
-    o2: Fp,
-    carry: Fp,
 }
 
 #[derive(Clone, Debug)]
@@ -309,33 +338,27 @@ impl Circuit<Fp> for MyCircuit {
         let chip = FNormChip::<Fq, Fp>::construct(config.nconfig, dchip);
 
         println!("assign region ...");
-        let (sum, carry) = chip.normalize(&mut layouter, v.clone(), v)?;
-        test_chip.expose_public(layouter.namespace(|| "out"), sum.values[0], 0)?;
-        test_chip.expose_public(layouter.namespace(|| "out"), sum.values[1], 1)?;
-        test_chip.expose_public(layouter.namespace(|| "out"), sum.values[2], 2)?;
-        test_chip.expose_public(layouter.namespace(|| "out"), carry, 3)?;
+        let n = chip.normalize(&mut layouter, v)?;
+        test_chip.expose_public(layouter.namespace(|| "out"), n.values[0], 0)?;
+        test_chip.expose_public(layouter.namespace(|| "out"), n.values[1], 1)?;
+        test_chip.expose_public(layouter.namespace(|| "out"), n.values[2], 2)?;
         Ok(())
     }
 }
 
 #[test]
-fn check() {
+fn test_no_overflow() {
     use halo2::dev::MockProver;
     let pub_inputs = vec![
+        Fp::from(0x1),
         Fp::from(0x2),
-        Fp::from(0x4),
-        Fp::from(0x6),
-        Fp::from(0x0),
+        Fp::from(0x3),
     ];
 
     let circuit = MyCircuit {
         x0: Fp::from(0x1),
         x1: Fp::from(0x2),
         x2: Fp::from(0x3),
-        o0: Fp::from(0x2),
-        o1: Fp::from(0x2),
-        o2: Fp::from(0x2),
-        carry: Fp::from(0x0)
     };
     let prover = MockProver::run(10, &circuit, vec![pub_inputs]).unwrap();
     let presult = prover.verify();

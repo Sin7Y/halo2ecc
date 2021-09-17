@@ -13,12 +13,12 @@ use crate::types::{Fs, Number};
 use crate::decompose::{DecomposeChip};
 
 pub trait FPlus <Fp: FieldExt, F: FieldExt>: Chip<F> {
-    fn normalize (
+    fn plus(
         &self,
         layouter: &mut impl Layouter<F>,
         x: Fs<F>,
         y: Fs<F>,
-    ) -> Result<(Fs<F>, Number<F>), Error>;
+    ) -> Result<Fs<F>, Error>;
 }
 
 pub struct FPlusChip<Fp: FieldExt, F: FieldExt> {
@@ -34,7 +34,6 @@ pub struct FPlusConfig {
     op2: Column<Advice>,
     carry: Column<Advice>,
     sum: Column<Advice>,
-    remainder: Column<Advice>,
     sel: Selector,
 }
 
@@ -54,24 +53,22 @@ impl<Fp: FieldExt, F: FieldExt> FPlusChip<Fp, F> {
         let op2 = meta.advice_column();
         let carry = meta.advice_column();
         let sum = meta.advice_column();
-        let remainder = meta.advice_column();
 
         meta.enable_equality(op1.into());
         meta.enable_equality(op2.into());
         meta.enable_equality(carry.into());
         meta.enable_equality(sum.into());
-        meta.enable_equality(remainder.into());
 
         let sel = meta.selector();
 
-        meta.create_gate("fnormalize", |meta| {
+        meta.create_gate("fplus", |meta| {
             let s = meta.query_selector(sel);
 
             // pure sum and carry arithment
-            // | op1 | op2 | carry | sum | remainder |
-            // | x0  | y0  |   0   | x0 + y0 | v0
-            // | x1  | y1  |  c0   | x1 + y1 + c0 | v_1 |
-            // | x2  | y2  |  c1   | x2 + y2 + c1 | v_2 |
+            // | op1 | op2 | carry | sum |
+            // | x0  | y0  |   0   | x0 + y0 |
+            // | x1  | y1  |  c0   | x1 + y1 + c0 |
+            // | x2  | y2  |  c1   | x2 + y2 + c1 |
             // | 0   | 0   |  c2   |     |      |
             let op1_cur = meta.query_advice(op1, Rotation::cur());
             let op2_cur = meta.query_advice(op2, Rotation::cur());
@@ -85,7 +82,6 @@ impl<Fp: FieldExt, F: FieldExt> FPlusChip<Fp, F> {
             op2,
             carry,
             sum,
-            remainder,
             sel,
         }
     }
@@ -105,12 +101,12 @@ impl<Fp: FieldExt, F: FieldExt> Chip<F> for FPlusChip<Fp, F> {
 }
 
 impl<Fp: FieldExt, F: FieldExt> FPlus<Fp, F> for FPlusChip<Fp, F> {
-    fn normalize(
+    fn plus(
         &self,
         layouter: &mut impl Layouter<F>,
         x: Fs<F>,
         y: Fs<F>,
-    ) -> Result<(Fs<F>, Number<F>), Error> {
+    ) -> Result<Fs<F>, Error> {
         let config = self.config();
         let xh = x.clone().values[2].value.unwrap();
         let xm = x.clone().values[1].value.unwrap();
@@ -235,11 +231,9 @@ impl<Fp: FieldExt, F: FieldExt> FPlus<Fp, F> for FPlusChip<Fp, F> {
                 Ok(())
             },
         )?;
-        let (sum_h, carry_h) =
-            self.decompose_chip.decompose(layouter, Number::<F>{cell: cell.unwrap(), value: Some(vh) }, 16)?;
-
+        let sum_h = Number::<F> { cell: cell.unwrap(), value:Some(vh) };
         out = Some (Fs::<F> {values: [sum_l, sum_m, sum_h]});
-        Ok((out.unwrap(), carry_h))
+        Ok(out.unwrap())
     }
 }
 
@@ -257,7 +251,6 @@ struct MyCircuit {
     o0: Fp,
     o1: Fp,
     o2: Fp,
-    carry: Fp,
 }
 
 #[derive(Clone, Debug)]
@@ -305,23 +298,21 @@ impl Circuit<Fp> for MyCircuit {
         let chip = FPlusChip::<Fq, Fp>::construct(config.nconfig, dchip);
 
         println!("assign region ...");
-        let (sum, carry) = chip.normalize(&mut layouter, v.clone(), v)?;
+        let sum = chip.plus(&mut layouter, v.clone(), v)?;
         test_chip.expose_public(layouter.namespace(|| "out"), sum.values[0], 0)?;
         test_chip.expose_public(layouter.namespace(|| "out"), sum.values[1], 1)?;
         test_chip.expose_public(layouter.namespace(|| "out"), sum.values[2], 2)?;
-        test_chip.expose_public(layouter.namespace(|| "out"), carry, 3)?;
         Ok(())
     }
 }
 
 #[test]
-fn check() {
+fn fplus_test_0() {
     use halo2::dev::MockProver;
     let pub_inputs = vec![
         Fp::from(0x2),
         Fp::from(0x4),
         Fp::from(0x6),
-        Fp::from(0x0),
     ];
 
     let circuit = MyCircuit {
@@ -331,7 +322,6 @@ fn check() {
         o0: Fp::from(0x2),
         o1: Fp::from(0x2),
         o2: Fp::from(0x2),
-        carry: Fp::from(0x0)
     };
     let prover = MockProver::run(10, &circuit, vec![pub_inputs]).unwrap();
     let presult = prover.verify();

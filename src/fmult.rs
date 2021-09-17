@@ -326,8 +326,8 @@ impl<Fp: FieldExt, F: FieldExt> FMultChip<Fp, F> {
                 let xy_bigunit = x_bigunit * y_bigunit;
                 let p_bigunit = fp_modulus_on_big_uint::<Fp>();
 
-                let r = fp_on_fr_from_big_unit::<F>(xy_bigunit.clone() % p_bigunit.clone());
-                let d = fp_on_fr_from_big_unit::<F>(xy_bigunit.clone() / p_bigunit.clone());
+                let r = fp_on_fr_from_big_uint::<F>(xy_bigunit.clone() % p_bigunit.clone());
+                let d = fp_on_fr_from_big_uint::<F>(xy_bigunit.clone() / p_bigunit.clone());
                 let p = fp_modulus_on_fr::<Fp, F>();
                 let ol = fp_on_fr_mul_plus(x, y, [F::zero(); 3]);
                 let or = fp_on_fr_mul_plus(p, d, r);
@@ -339,23 +339,23 @@ impl<Fp: FieldExt, F: FieldExt> FMultChip<Fp, F> {
                     let mut carry = vec![];
                     let mut rem = vec![];
 
-                    carry.push(big_unit_from_f(o[0]) / shift_160.clone());
-                    carry.push((carry[0].clone() + big_unit_from_f(o[1])) / shift_80.clone());
-                    carry.push((carry[1].clone() + big_unit_from_f(o[2])) / shift_80.clone());
+                    carry.push(big_uint_from_f(o[0]) / shift_160.clone());
+                    carry.push((carry[0].clone() + big_uint_from_f(o[1])) / shift_80.clone());
+                    carry.push((carry[1].clone() + big_uint_from_f(o[2])) / shift_80.clone());
 
-                    rem.push(big_unit_from_f(o[0]) % shift_160.clone());
-                    rem.push((carry[0].clone() + big_unit_from_f(o[1])) % shift_80.clone());
-                    rem.push((carry[1].clone() + big_unit_from_f(o[2])) % shift_80.clone());
+                    rem.push(big_uint_from_f(o[0]) % shift_160.clone());
+                    rem.push((carry[0].clone() + big_uint_from_f(o[1])) % shift_80.clone());
+                    rem.push((carry[1].clone() + big_uint_from_f(o[2])) % shift_80.clone());
 
                     return (
                         carry
                             .iter()
-                            .map(|x| f_from_big_unit(x))
+                            .map(|x| f_from_big_uint(x))
                             .collect::<Vec<_>>()
                             .try_into()
                             .unwrap(),
                         rem.iter()
-                            .map(|x| f_from_big_unit(x))
+                            .map(|x| f_from_big_uint(x))
                             .collect::<Vec<_>>()
                             .try_into()
                             .unwrap(),
