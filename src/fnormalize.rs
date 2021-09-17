@@ -134,10 +134,19 @@ impl<Fp: FieldExt, F: FieldExt> FNorm<Fp, F> for FNormChip<Fp, F> {
         let mut out = None;
         let mut cell = None;
 
+        println!("nl:{:?} pl:{:?} cl:{:?} xl:{:?} d:{:?}", nl, pl, F::zero(), xl, d);
+
         layouter.assign_region(
             || "load row0",
             |mut region| {
                 config.sel.enable(&mut region, 0)?;
+                region.assign_advice(
+                    || format!("n0"),
+                    config.n,
+                    0,
+                    || Ok(nl),
+                )?;
+
                 region.assign_advice(
                     || format!("c0"),
                     config.carry,
@@ -187,6 +196,14 @@ impl<Fp: FieldExt, F: FieldExt> FNorm<Fp, F> for FNormChip<Fp, F> {
             || "load row1",
             |mut region| {
                 config.sel.enable(&mut region, 0)?;
+                region.assign_advice(
+                    || format!("n1"),
+                    config.n,
+                    0,
+                    || Ok(nm),
+                )?;
+
+
                 let c = region.assign_advice(
                     || format!("carry_{}", 1),
                     config.carry,
@@ -232,11 +249,19 @@ impl<Fp: FieldExt, F: FieldExt> FNorm<Fp, F> for FNormChip<Fp, F> {
             10
         )?;
 
-        let vh = nh + ph + carry_m.clone().value.unwrap();
+        let vh = nh + ph * d + carry_m.clone().value.unwrap();
         layouter.assign_region(
             || "load row2",
             |mut region| {
                 config.sel.enable(&mut region, 0)?;
+
+                region.assign_advice(
+                    || format!("n2"),
+                    config.n,
+                    0,
+                    || Ok(nh),
+                )?;
+
                 region.assign_advice(
                     || format!("c2"),
                     config.carry,
