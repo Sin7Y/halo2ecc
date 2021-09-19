@@ -262,7 +262,7 @@ impl<Fp: FieldExt, F: FieldExt> ShortMultChip<Fp, F> {
                         sum[i] += lookupi;
                     }
 
-                    c = N_div_256(c);
+                    c = n_div_256(c);
                 }
 
                 // last row

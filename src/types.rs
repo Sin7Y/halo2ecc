@@ -18,7 +18,7 @@ pub struct Number<F: FieldExt> {
     pub value: Option<F>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Copy)]
 pub struct Fs<F:FieldExt> {
     pub values: [Number<F>; 3],
 }

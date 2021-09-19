@@ -116,7 +116,6 @@ impl<Fp: FieldExt, F: FieldExt> FPlus<Fp, F> for FPlusChip<Fp, F> {
         let ym = y.clone().values[1].value.unwrap();
         let yl = y.clone().values[0].value.unwrap();
 
-        let mut out = None;
         let mut cell = None;
 
         layouter.assign_region(
@@ -232,8 +231,8 @@ impl<Fp: FieldExt, F: FieldExt> FPlus<Fp, F> for FPlusChip<Fp, F> {
             },
         )?;
         let sum_h = Number::<F> { cell: cell.unwrap(), value:Some(vh) };
-        out = Some (Fs::<F> {values: [sum_l, sum_m, sum_h]});
-        Ok(out.unwrap())
+        let out = Fs::<F> {values: [sum_l, sum_m, sum_h]};
+        Ok(out)
     }
 }
 

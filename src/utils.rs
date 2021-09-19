@@ -64,7 +64,7 @@ pub fn proj_f<Fp: FieldExt, F: FieldExt>(x: Fp, i: usize) -> F {
 pub fn proj_byte(x: &BigUint, i: usize) -> usize {
     let mut bytes = Vec::from(x.to_bytes_le());
     bytes.resize(32, 0u8);
-    if (i >= 32) {
+    if i >= 32 {
         return 0;
     } else {
         return bytes[i].into();
@@ -108,7 +108,7 @@ pub fn get_shift_lookup<F: FieldExt>(x: F, shift: u64) -> F {
     return x * pow2::<F>(shift * 8 + 240);
 }
 
-pub fn N_div_256<F: FieldExt>(x: F) -> F {
+pub fn n_div_256<F: FieldExt>(x: F) -> F {
     let a = F::from_bytes(
         &[&x.to_bytes()[1..32], &[0u8; 1][..]]
             .concat()
@@ -118,6 +118,17 @@ pub fn N_div_256<F: FieldExt>(x: F) -> F {
     .unwrap();
 
     return a;
+}
+
+pub fn constrain_fs<F:FieldExt>(
+    region: &mut Region<F>,
+    fin:&Fs<F>,
+    fout:&Fs<F>
+) -> Result <(), Error> {
+    for i in 0..3 {
+        region.constrain_equal(fin.values[i].cell, fout.values[i].cell)?;
+    }
+    Ok(())
 }
 
 pub fn assign_fs<F: FieldExt>(

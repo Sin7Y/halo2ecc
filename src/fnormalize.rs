@@ -76,7 +76,6 @@ impl<Fp: FieldExt, F: FieldExt> FNormChip<Fp, F> {
             // x1 | n1  | p1  |  c0   | d | r1 + y1 + c0 |
             // x2 | n2  | p2  |  c1   | d | x2 + y2 + c1 |
             let n_cur = meta.query_advice(n, Rotation::cur());
-            let x_cur = meta.query_advice(x, Rotation::cur());
             let p_cur = meta.query_fixed(p, Rotation::cur());
             let carry_cur = meta.query_advice(carry, Rotation::cur());
             let sum_cur = meta.query_advice(sum, Rotation::cur());
@@ -114,7 +113,7 @@ impl<Fp: FieldExt, F: FieldExt> FNorm<Fp, F> for FNormChip<Fp, F> {
         &self,
         layouter: &mut impl Layouter<F>,
         x: Fs<F>,
-    ) -> Result<(Fs<F>), Error> {
+    ) -> Result<Fs<F>, Error> {
         let config = self.config();
         let xh = x.clone().values[2].value.unwrap();
         let xm = x.clone().values[1].value.unwrap();
@@ -131,7 +130,6 @@ impl<Fp: FieldExt, F: FieldExt> FNorm<Fp, F> for FNormChip<Fp, F> {
 
         let [nl, nm, nh] = fp_on_fr_from_big_uint::<F>(n_b);
 
-        let mut out = None;
         let mut cell = None;
 
         println!("nl:{:?} pl:{:?} cl:{:?} xl:{:?} d:{:?}", nl, pl, F::zero(), xl, d);
@@ -300,8 +298,8 @@ impl<Fp: FieldExt, F: FieldExt> FNorm<Fp, F> for FNormChip<Fp, F> {
             },
         )?;
         let nh_cell = Number::<F> { cell: cell.unwrap(), value:Some(vh) };
-        out = Some (Fs::<F> {values: [nl_cell, nm_cell, nh_cell]});
-        Ok(out.unwrap())
+        let out = Fs::<F> {values: [nl_cell, nm_cell, nh_cell]};
+        Ok(out)
     }
 }
 

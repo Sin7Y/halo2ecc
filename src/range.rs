@@ -118,6 +118,7 @@ impl<F: FieldExt> RangeCheck<F> for RangeCheckChip<F> {
 
         let (sum_l, carry_l) =
             self.decompose_chip.decompose(layouter, x, csize)?;
+
         layouter.assign_region(
             || "constraint_equal",
             |mut region| {
@@ -127,6 +128,7 @@ impl<F: FieldExt> RangeCheck<F> for RangeCheckChip<F> {
                 Ok(())
             },
         )?;
+
         Ok(())
     }
 }
@@ -178,7 +180,7 @@ impl Circuit<Fp> for MyCircuit {
         let dchip = DecomposeChip::<Fp>::constructor(config.dconfig);
         dchip.load_range_table(&mut layouter)?;
         let rchip = RangeCheckChip::<Fp>::construct(config.rconfig, dchip);
-        rchip.range_check(&mut layouter, x0, 10);
+        rchip.range_check(&mut layouter, x0, 10)?;
         Ok(())
     }
 }

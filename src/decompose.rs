@@ -177,7 +177,7 @@ impl<F: FieldExt> DecomposeChip<F> {
 
                     sum += rem * b;
                     b *= F::from(256);
-                    c = N_div_256(c);
+                    c = n_div_256(c);
                 }
 
                 Ok(())

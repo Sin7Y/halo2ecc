@@ -7,5 +7,6 @@ mod frange;
 mod shiftplus;
 mod fnormalize;
 mod fplus;
+mod fminus;
 mod fmult;
 mod byteoptable;

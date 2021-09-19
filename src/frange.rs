@@ -10,7 +10,7 @@ use std::convert::TryInto;
 use halo2::{
     arithmetic::FieldExt,
     circuit::{Chip, Layouter, SimpleFloorPlanner},
-    pasta::{Fq, Fp},
+    pasta::{Fq},
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Selector, TableColumn},
     poly::Rotation,
 };
@@ -54,13 +54,12 @@ impl<Fp: FieldExt, F: FieldExt> FRangeChip<Fp, F> {
     }
 
     fn get_sless_hint (&self, last_is_sless:usize, rem:usize, shift:usize) -> usize {
-        let config = self.config();
         let modulus = fp_modulus_on_big_uint::<Fp>();
         let chunk = proj_byte(&modulus, shift);
-        if (rem < chunk) {
+        if rem < chunk {
             1 as usize
         } else {
-            if (rem > chunk) {
+            if rem > chunk {
                 0 as usize
             } else {
                 last_is_sless
@@ -111,12 +110,10 @@ impl<Fp: FieldExt, F: FieldExt> FRangeChip<Fp, F> {
             let s = meta.query_selector(s);
             let c_cur = meta.query_advice(c, Rotation::cur());
             let r_cur = meta.query_advice(r, Rotation::cur());
-            let hint_cur = meta.query_advice(hint, Rotation::cur());
             let sless_cur = meta.query_advice(sless, Rotation::cur());
             let shift_cur = meta.query_advice(sless, Rotation::cur());
 
             let c_next = meta.query_advice(c, Rotation::next());
-            let r_next = meta.query_advice(r, Rotation::next());
             let hint_next = meta.query_advice(hint, Rotation::next());
             let shift_next = meta.query_advice(sless, Rotation::next());
 
@@ -215,7 +212,7 @@ impl<Fp: FieldExt, F: FieldExt> FRangeChip<Fp, F> {
                         || Ok(F::from_u64(sless.try_into().unwrap())),
                     )?;
 
-                    let hint = self.get_sless_hint(hint, bytes[row].into(), shift);
+                    hint = self.get_sless_hint(hint, bytes[row].into(), shift);
                     let sless_cell = region.assign_advice(
                         || format!("sless_{:?}", row),
                         config.sless,
@@ -231,7 +228,7 @@ impl<Fp: FieldExt, F: FieldExt> FRangeChip<Fp, F> {
                         carry = Some(Number::<F>{cell: c_cell, value: Some(c)});
                     }
                     shift += 1;
-                    c = N_div_256(c);
+                    c = n_div_256(c);
                 }
 
                 Ok(())
