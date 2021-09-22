@@ -292,6 +292,7 @@ impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
 #[test]
 fn frange_test1() {
     use halo2::dev::MockProver;
+    use halo2::pasta::Fp;
 
     let q_modulus = fp_modulus_on_big_uint::<Fq>();
 

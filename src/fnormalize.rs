@@ -389,3 +389,24 @@ fn test_no_overflow() {
 
     assert!(presult.is_ok());
 }
+
+#[test]
+fn test_with_overflow() {
+    use halo2::dev::MockProver;
+    let pub_inputs = vec![
+        Fp::from(0x1),
+        Fp::from(0x2),
+        Fp::from(0x3),
+    ];
+
+    let circuit = MyCircuit {
+        x0: Fp::from(0x1),
+        x1: Fp::from(0x2),
+        x2: Fp::from(0x3),
+    };
+    let prover = MockProver::run(10, &circuit, vec![pub_inputs]).unwrap();
+    let presult = prover.verify();
+    println!("Error {:?}", presult);
+
+    assert!(presult.is_ok());
+}

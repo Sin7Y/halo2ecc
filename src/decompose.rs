@@ -256,8 +256,6 @@ fn test1() {
 fn test2() {
     use halo2::dev::MockProver;
     // The number of rows used in the constraint system matrix.
-    const PUB_INPUT: u64 = 3;
-
     let pub_inputs = vec![Fp::from(0x2), Fp::from(0x0)];
 
     let circuit = MyCircuit {
